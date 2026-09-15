@@ -1,0 +1,104 @@
+---
+/**
+ * TeacherCourseCard.astro — features/teacher
+ * Tarjeta de curso para el grid del profesor.
+ * Muestra: nombre, grupo, número de alumnos, progreso promedio y acciones.
+ */
+import { Icon } from 'astro-icon/components';
+import { TEACHER_ROUTES } from '../../core/config/paths';
+
+interface Props {
+  courseId: string;
+  courseTitle: string;
+  courseGroup: string;
+  courseCode: string;
+  studentCount: number;
+  averageProgress: number;
+  status: 'ABIERTO' | 'CERRADO' | 'EN_PROGRESO';
+  bannerGradient: string;
+  pendingSubmissions: number;
+}
+
+const {
+  courseId,
+  courseTitle,
+  courseGroup,
+  courseCode,
+  studentCount,
+  averageProgress,
+  status,
+  bannerGradient,
+  pendingSubmissions,
+} = Astro.props;
+
+const statusConfig = {
+  ABIERTO:      { label: 'Abierto',     classes: 'bg-success-soft text-success-dark' },
+  EN_PROGRESO:  { label: 'En Progreso', classes: 'bg-brand-soft text-brand-dark' },
+  CERRADO:      { label: 'Cerrado',     classes: 'bg-neutral-subtle text-subtle' },
+} as const;
+
+const currentStatus = statusConfig[status];
+---
+
+<article class="course-card bg-card rounded-3xl overflow-hidden border border-edge hover:border-brand/20 hover:shadow-md transition-all duration-200 flex flex-col group" data-status={status}>
+
+  <!-- Banner del curso -->
+  <div class={`h-32 bg-gradient-to-br ${bannerGradient} relative p-5 flex flex-col justify-between`}>
+    <div class="flex items-center justify-between">
+      <span class={`text-[10px] font-bold px-2.5 py-1 rounded-full ${currentStatus.classes}`}>
+        {currentStatus.label}
+      </span>
+      {pendingSubmissions > 0 && (
+        <span class="flex items-center gap-1 bg-white/20 backdrop-blur-sm text-white text-[10px] font-bold px-2.5 py-1 rounded-full">
+          <Icon name="lucide:inbox" class="w-3 h-3" aria-hidden="true" />
+          {pendingSubmissions} por revisar
+        </span>
+      )}
+    </div>
+    <p class="text-white/60 text-[10px] font-semibold tracking-widest uppercase">{courseCode}</p>
+  </div>
+
+  <!-- Cuerpo -->
+  <div class="p-5 flex-1 flex flex-col gap-4">
+    <div>
+      <h3 class="text-base font-extrabold text-heading leading-tight group-hover:text-brand-dark transition-colors">
+        {courseTitle}
+      </h3>
+      <p class="text-xs text-subtle font-medium mt-0.5">{courseGroup}</p>
+    </div>
+
+    <!-- Métricas -->
+    <div class="flex items-center gap-4 text-xs text-subtle font-semibold">
+      <span class="flex items-center gap-1.5">
+        <Icon name="lucide:users" class="w-3.5 h-3.5 text-brand" aria-hidden="true" />
+        {studentCount} alumnos
+      </span>
+    </div>
+
+    <!-- Acciones -->
+    <div class="flex items-center gap-2 mt-auto pt-2 border-t border-edge-soft">
+      <a
+        href={TEACHER_ROUTES.courseDetail(courseId)}
+        class="flex-1 flex items-center justify-center gap-1.5 bg-brand text-white text-xs font-bold py-2.5 rounded-xl hover:bg-brand-dark transition-colors"
+      >
+        <Icon name="lucide:layout-list" class="w-3.5 h-3.5" aria-hidden="true" />
+        Gestionar
+      </a>
+      <a
+        href={TEACHER_ROUTES.courseStudents(courseId)}
+        class="flex items-center justify-center gap-1.5 bg-neutral-subtle text-heading text-xs font-bold px-3 py-2.5 rounded-xl hover:bg-neutral-light transition-colors"
+        aria-label={`Ver alumnos de ${courseTitle}`}
+      >
+        <Icon name="lucide:users" class="w-3.5 h-3.5" aria-hidden="true" />
+      </a>
+      <a
+        href={TEACHER_ROUTES.courseAnnouncements(courseId)}
+        class="flex items-center justify-center gap-1.5 bg-neutral-subtle text-heading text-xs font-bold px-3 py-2.5 rounded-xl hover:bg-neutral-light transition-colors"
+        aria-label={`Ver anuncios de ${courseTitle}`}
+      >
+        <Icon name="lucide:megaphone" class="w-3.5 h-3.5" aria-hidden="true" />
+      </a>
+    </div>
+  </div>
+
+</article>

@@ -1,0 +1,82 @@
+---
+import { Icon } from 'astro-icon/components';
+import { getRoleRoutes } from '../../core/services/api';
+
+interface Props {
+  activeNav: string;
+}
+
+const { activeNav } = Astro.props;
+
+const token = Astro.cookies.get('ka_session')?.value ?? '';
+
+// ── Nav items fijos del estudiante (orden garantizado) ──────────
+// Se define aquí para que el Dashboard SIEMPRE aparezca primero,
+// independientemente de lo que devuelva la API de permisos.
+const STUDENT_NAV: { id: string; label: string; href: string; icon: string }[] = [
+  { id: 'inicio',          label: 'Dashboard',       href: '/estudiante',                  icon: 'lucide:layout-dashboard' },
+  { id: 'cursos',          label: 'Mis Cursos',       href: '/estudiante/cursos',           icon: 'lucide:book-open'         },
+  { id: 'calificaciones',  label: 'Calificaciones',   href: '/estudiante/calificaciones',   icon: 'lucide:star'              },
+  { id: 'biblioteca',      label: 'Biblioteca',       href: '/estudiante/biblioteca',       icon: 'lucide:library'           },
+  { id: 'pagos',           label: 'Pagos',            href: '/estudiante/pagos',            icon: 'lucide:credit-card'       },
+];
+
+// Intentamos obtener rutas del backend para verificar acceso (401 → logout)
+// pero NO usamos sus datos para construir el nav; usamos STUDENT_NAV siempre.
+try {
+  await getRoleRoutes(token, 'estudiante');
+} catch (error: any) {
+  if (error?.statusCode === 401) {
+    return Astro.redirect('/logout');
+  }
+  // Cualquier otro error de red → continuar con nav fijo sin problema
+}
+---
+
+<aside class="w-64 flex-shrink-0 bg-sidebar flex flex-col h-full">
+
+  <!-- Brand -->
+  <div class="flex items-center px-6 py-5 bg-white w-full border-b border-edge">
+    <div class="flex items-center gap-3">
+      <div class="w-9 h-9 bg-neutral-subtle rounded-md flex items-center justify-center font-bold text-heading text-lg shrink-0">
+        K
+      </div>
+      <div class="font-extrabold text-heading text-lg leading-none tracking-tight">
+        Kelly<br/>Academy
+      </div>
+    </div>
+  </div>
+
+  <!-- Nav -->
+  <nav class="flex-1 px-4 py-6 space-y-1.5" aria-label="Navegación principal">
+    {STUDENT_NAV.map((item) => {
+      const isActive = item.id === activeNav;
+      return (
+        <a
+          href={item.href}
+          aria-current={isActive ? 'page' : undefined}
+          class={`flex items-center gap-3 px-4 py-3 rounded-xl text-sm font-semibold transition-colors duration-200 ${
+            isActive
+              ? 'bg-brand text-white shadow-md'
+              : 'text-faint hover:bg-white/10 hover:text-white'
+          }`}
+        >
+          <Icon name={item.icon} class="w-5 h-5 flex-shrink-0" />
+          {item.label}
+        </a>
+      );
+    })}
+  </nav>
+
+  <!-- Cerrar Sesión -->
+  <div class="px-4 py-6 border-t border-white/10">
+    <a
+      href="/logout"
+      class="flex items-center gap-3 px-4 py-3 rounded-xl text-sm font-semibold text-red-400 hover:bg-danger/10 hover:text-red-300 transition-colors duration-200"
+    >
+      <Icon name="lucide:log-out" class="w-5 h-5 flex-shrink-0" />
+      Cerrar Sesión
+    </a>
+  </div>
+
+</aside>

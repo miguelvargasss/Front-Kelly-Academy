@@ -1,0 +1,11 @@
+---
+/**
+ * logout.astro — Endpoint de cierre de sesión
+ * ──────────────────────────────────────────────────
+ * Elimina las cookies de sesión y redirige al login.
+ */
+Astro.cookies.delete('ka_session', { path: '/' });
+Astro.cookies.delete('ka_role', { path: '/' });
+
+return Astro.redirect('/login');
+---

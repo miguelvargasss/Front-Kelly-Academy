@@ -1,0 +1,841 @@
+---
+/**
+ * profesor/alumnos.astro — Gestión Global de Alumnos
+ * ─────────────────────────────────────────────────────
+ * CRUD completo: crear alumno, asociar/mover/remover de curso,
+ * eliminar cuenta de acceso al sistema.
+ */
+import TeacherDashboardLayout from '../../layouts/TeacherDashboardLayout.astro';
+import { Icon } from 'astro-icon/components';
+import { getUsers, getCourses, getUserCourses } from '../../core/services/api';
+import DeleteConfirmModal from '../../components/ui/DeleteConfirmModal.astro';
+
+const token = Astro.cookies.get('ka_session')?.value ?? '';
+
+const { users: studentsList } = await getUsers(token, 'estudiante', undefined, 1, 100).catch(() => ({ users: [] }));
+const { courses: coursesApi } = await getCourses(token, 1, 100).catch(() => ({ courses: [] }));
+
+const studentsWithCourses = await Promise.all(
+  studentsList.map(async (st) => {
+    // Buscar los cursos en los que el estudiante está inscrito
+    const enrollments = await getUserCourses(token, st.id).catch(() => []);
+    // Consideramos inscripciones activas (o todas, pero preferible activas)
+    const activeEnrollments = enrollments.filter(e => e.status === 'activo');
+    
+    return {
+      id: st.id,
+      name: st.fullName,
+      email: st.email,
+      phone: st.phone || '',
+      joinDate: new Date(st.createdAt).toLocaleDateString('es-CO'),
+      status: st.status,
+      courses: activeEnrollments.map(e => e.course?.title || 'Curso'),
+      courseIds: activeEnrollments.map(e => e.courseId), 
+      progress: 0,
+      avatar: st.avatarUrl || ''
+    };
+  })
+);
+
+const students = studentsWithCourses;
+
+const COURSES = coursesApi.map(c => ({
+  id: c.id,
+  name: c.title,
+  code: c.code
+}));
+
+const statusLabel = { activo:'Activo', en_riesgo:'En riesgo', inactivo:'Inactivo', suspendido:'Suspendido' } as const;
+const statusColor = {
+  activo:     'bg-success-soft text-success-dark border-success-soft',
+  en_riesgo:  'bg-warning-soft text-warning-dark border-warning-soft',
+  inactivo:   'bg-neutral-100 text-neutral-500 border-neutral-200',
+  suspendido: 'bg-danger-soft text-danger-dark border-danger-soft',
+} as const;
+
+const initials = (name: string) =>
+  name.split(' ').map(w => w[0] ?? '').slice(0, 2).join('').toUpperCase();
+
+const totalActive   = students.filter(s => s.status === 'activo').length;
+const totalInactive = students.filter(s => s.status === 'inactivo' || s.status === 'suspendido').length;
+const totalRisk     = students.filter(s => s.status === 'en_riesgo').length;
+const avgProgress   = 0;
+---
+
+<TeacherDashboardLayout pageTitle="Alumnos" breadcrumb="Alumnos" activeNav="alumnos">
+
+  <div class="max-w-7xl mx-auto flex flex-col gap-8">
+
+    <!-- ── Encabezado ── -->
+    <div class="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
+      <div>
+        <h1 class="text-3xl font-extrabold text-heading">Gestión de Alumnos</h1>
+        <p class="text-subtle font-medium mt-1 text-sm">{students.length} alumnos registrados en el sistema.</p>
+      </div>
+      <button
+        type="button"
+        id="open-create-student-btn"
+        class="flex items-center gap-2 bg-brand text-white font-bold text-sm px-5 py-3 rounded-xl hover:bg-brand-dark transition-colors shadow-sm w-full sm:w-auto justify-center"
+      >
+        <Icon name="lucide:user-plus" class="w-4 h-4" aria-hidden="true" />
+        Nuevo Alumno
+      </button>
+    </div>
+
+    <!-- ── Métricas rápidas ── -->
+    <div class="grid grid-cols-1 sm:grid-cols-3 gap-4">
+      {[
+        { label:'Alumnos activos',   value: totalActive,   icon:'lucide:user-check',  color:'text-success-dark',  bg:'bg-success-soft'  },
+        { label:'En riesgo',         value: totalRisk,     icon:'lucide:alert-circle', color:'text-warning-dark', bg:'bg-warning-soft' },
+        { label:'Inactivos',         value: totalInactive, icon:'lucide:user-x',      color:'text-danger',    bg:'bg-danger-soft'    },
+      ].map(m => (
+        <article class="bg-card rounded-2xl border border-edge p-5 flex items-center gap-4">
+          <div class={`w-10 h-10 rounded-xl flex items-center justify-center shrink-0 ${m.bg}`}>
+            <Icon name={m.icon} class={`w-5 h-5 ${m.color}`} aria-hidden="true" />
+          </div>
+          <div>
+            <p class="text-2xl font-extrabold text-heading">{m.value}</p>
+            <p class="text-xs text-subtle font-semibold">{m.label}</p>
+          </div>
+        </article>
+      ))}
+    </div>
+
+    <!-- ── Filtros y Búsqueda ── -->
+    <div class="flex flex-col sm:flex-row items-start sm:items-center gap-3">
+      <div class="relative flex-1 w-full sm:max-w-xs">
+        <Icon name="lucide:search" class="absolute left-3.5 top-1/2 -translate-y-1/2 w-4 h-4 text-muted pointer-events-none" aria-hidden="true" />
+        <input
+          type="text"
+          id="student-search"
+          placeholder="Buscar alumno por nombre o correo…"
+          class="w-full pl-10 pr-4 py-2.5 rounded-xl border border-edge bg-card text-sm text-heading font-medium placeholder:text-muted focus:outline-none focus:ring-2 focus:ring-brand focus:border-transparent transition"
+        />
+      </div>
+      <div class="flex items-center gap-2 flex-wrap">
+        {(['todos','activo','en_riesgo','inactivo','suspendido'] as const).map((f, i) => (
+          <button
+            type="button"
+            data-filter={f}
+            class={`filter-btn px-4 py-2 rounded-xl text-xs font-bold border transition-colors ${
+              i === 0
+                ? 'bg-brand text-white border-brand'
+                : 'bg-card text-subtle border-edge hover:border-brand/30 hover:text-heading'
+            }`}
+          >
+            {f === 'todos' ? 'Todos' : f === 'en_riesgo' ? 'En riesgo' : f.charAt(0).toUpperCase() + f.slice(1)}
+          </button>
+        ))}
+      </div>
+    </div>
+
+    <!-- ── Tabla de Alumnos ── -->
+    <section aria-labelledby="students-table-heading">
+      <h2 id="students-table-heading" class="sr-only">Lista de alumnos</h2>
+      <div class="bg-card rounded-2xl border border-edge overflow-hidden">
+        <div class="overflow-x-auto">
+          <table class="w-full text-sm" id="students-table">
+            <thead class="bg-neutral-bg/50 border-b border-edge">
+              <tr>
+                <th class="text-left px-5 py-3.5 text-xs font-extrabold text-subtle uppercase tracking-wider">Alumno</th>
+                <th class="text-left px-5 py-3.5 text-xs font-extrabold text-subtle uppercase tracking-wider hidden md:table-cell">Correo / Teléfono</th>
+                <th class="text-left px-5 py-3.5 text-xs font-extrabold text-subtle uppercase tracking-wider hidden lg:table-cell">Cursos</th>
+                <th class="text-left px-5 py-3.5 text-xs font-extrabold text-subtle uppercase tracking-wider hidden sm:table-cell">Estado</th>
+                <th class="text-left px-5 py-3.5 text-xs font-extrabold text-subtle uppercase tracking-wider hidden xl:table-cell">Progreso</th>
+                <th class="text-right px-5 py-3.5 text-xs font-extrabold text-subtle uppercase tracking-wider">Acciones</th>
+              </tr>
+            </thead>
+            <tbody class="divide-y divide-edge-soft" id="students-tbody">
+              {students.map(st => (
+                <tr
+                  class="hover:bg-neutral-bg/30 transition-colors student-row"
+                  data-id={st.id}
+                  data-name={st.name.toLowerCase()}
+                  data-email={st.email.toLowerCase()}
+                  data-status={st.status}
+                >
+                  <!-- Alumno -->
+                  <td class="px-5 py-4">
+                    <div class="flex items-center gap-3">
+                      <div class="w-9 h-9 rounded-full bg-brand-soft flex items-center justify-center text-brand-dark text-xs font-extrabold shrink-0 select-none">
+                        {initials(st.name)}
+                      </div>
+                      <div>
+                        <p class="font-bold text-heading text-sm">{st.name}</p>
+                        <p class="text-xs text-subtle font-medium">Ingresó {st.joinDate}</p>
+                      </div>
+                    </div>
+                  </td>
+                  <!-- Contacto -->
+                  <td class="px-5 py-4 hidden md:table-cell">
+                    <p class="font-medium text-heading text-xs">{st.email}</p>
+                    <p class="text-muted text-xs mt-0.5">{st.phone}</p>
+                  </td>
+                  <!-- Cursos -->
+                  <td class="px-5 py-4 hidden lg:table-cell">
+                    {st.courses.length === 0
+                      ? <span class="text-xs text-muted font-semibold italic">Sin cursos</span>
+                      : (
+                        <div class="flex flex-wrap gap-1">
+                          {st.courses.map(c => (
+                            <span class="px-2.5 py-1 bg-brand-soft/50 text-brand-dark text-[10px] font-bold rounded-full whitespace-nowrap">
+                              {c.split(':')[0].trim()}
+                            </span>
+                          ))}
+                        </div>
+                      )
+                    }
+                  </td>
+                  <!-- Estado -->
+                  <td class="px-5 py-4 hidden sm:table-cell">
+                    <span class={`inline-flex items-center px-2.5 py-1 rounded-full text-[10px] font-bold border ${statusColor[st.status]}`}>
+                      {statusLabel[st.status]}
+                    </span>
+                  </td>
+                  <!-- Progreso -->
+                  <td class="px-5 py-4 hidden xl:table-cell">
+                    <div class="flex items-center gap-3 min-w-[120px]">
+                      <div class="flex-1 h-1.5 bg-neutral-subtle rounded-full overflow-hidden">
+                        <div
+                          class={`h-full rounded-full ${st.progress >= 70 ? 'bg-success' : st.progress >= 40 ? 'bg-brand-dark' : 'bg-warning'}`}
+                          style={`width:${st.progress}%`}
+                        ></div>
+                      </div>
+                      <span class="text-xs font-extrabold text-heading tabular-nums w-8 text-right">{st.progress}%</span>
+                    </div>
+                  </td>
+                  <!-- Acciones -->
+                  <td class="px-5 py-4 text-right">
+                    <div class="flex items-center justify-end gap-1">
+                      <!-- Asignar / Mover curso -->
+                      <button
+                        type="button"
+                        class="action-enroll-btn p-2 rounded-xl border border-edge text-subtle hover:text-brand hover:border-brand/30 hover:bg-brand-soft/30 transition-colors"
+                        data-id={st.id}
+                        data-name={st.name}
+                        data-courseids={JSON.stringify(st.courseIds)}
+                        aria-label={`Gestionar cursos de ${st.name}`}
+                        title="Gestionar cursos"
+                      >
+                        <Icon name="lucide:book-marked" class="w-4 h-4" aria-hidden="true" />
+                      </button>
+                      <!-- Editar -->
+                      <button
+                        type="button"
+                        class="action-edit-btn p-2 rounded-xl border border-edge text-subtle hover:text-heading hover:border-edge hover:bg-neutral-subtle transition-colors"
+                        data-id={st.id}
+                        data-name={st.name}
+                        data-email={st.email}
+                        data-phone={st.phone}
+                        data-status={st.status}
+                        aria-label={`Editar ${st.name}`}
+                        title="Editar alumno"
+                      >
+                        <Icon name="lucide:pencil" class="w-4 h-4" aria-hidden="true" />
+                      </button>
+                      <!-- Eliminar -->
+                      <button
+                        type="button"
+                        class="action-delete-btn p-2 rounded-xl border border-edge text-subtle hover:text-danger hover:border-danger-soft hover:bg-danger-soft transition-colors"
+                        data-id={st.id}
+                        data-name={st.name}
+                        aria-label={`Eliminar ${st.name}`}
+                        title="Eliminar alumno"
+                      >
+                        <Icon name="lucide:trash-2" class="w-4 h-4" aria-hidden="true" />
+                      </button>
+                    </div>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+
+        <!-- Footer de tabla -->
+        <div class="px-5 py-3.5 border-t border-edge-soft bg-neutral-bg/20 flex items-center justify-between">
+          <p class="text-xs font-semibold text-subtle" id="table-count">Mostrando {students.length} alumnos</p>
+          <div class="flex items-center gap-2 text-xs text-subtle font-semibold">
+            <Icon name="lucide:info" class="w-3.5 h-3.5" aria-hidden="true" />
+            Datos de demostración
+          </div>
+        </div>
+      </div>
+    </section>
+
+  </div>
+  <script is:inline define:vars={{ COURSES }}>
+    window.COURSES_DATA = COURSES;
+  </script>
+
+<!-- ═══════════════════════════════════════════════════
+     MODAL: CREAR / EDITAR ALUMNO
+════════════════════════════════════════════════════ -->
+<div id="student-modal" class="fixed inset-0 z-50 flex items-end sm:items-center justify-center opacity-0 pointer-events-none transition-opacity duration-300" role="dialog" aria-modal="true" aria-labelledby="student-modal-title">
+  <div id="student-modal-backdrop" class="absolute inset-0 bg-black/50 backdrop-blur-sm cursor-pointer"></div>
+  <div id="student-modal-panel" class="relative bg-card w-full sm:w-[90%] sm:max-w-md max-h-[90vh] rounded-t-2xl sm:rounded-2xl shadow-2xl flex flex-col overflow-hidden transform translate-y-4 sm:scale-95 transition-transform duration-300 border border-edge">
+    <!-- Cabecera -->
+    <div class="px-5 py-4 border-b border-edge-soft flex items-center justify-between bg-neutral-bg/30 shrink-0">
+      <div class="flex items-center gap-2.5">
+        <div class="w-8 h-8 rounded-full bg-brand-soft flex items-center justify-center shrink-0">
+          <Icon name="lucide:user-plus" class="w-4 h-4 text-brand-dark" aria-hidden="true" />
+        </div>
+        <div>
+          <h2 id="student-modal-title" class="text-base font-extrabold text-heading">Nuevo Alumno</h2>
+          <p class="text-[11px] font-semibold text-subtle">Completa los datos del alumno</p>
+        </div>
+      </div>
+      <button id="close-student-modal" type="button" class="p-1.5 rounded-full hover:bg-neutral-subtle text-subtle hover:text-heading transition-colors" aria-label="Cerrar">
+        <Icon name="lucide:x" class="w-4 h-4" aria-hidden="true" />
+      </button>
+    </div>
+    <!-- Cuerpo -->
+    <div class="overflow-y-auto flex-1 px-5 py-4 flex flex-col gap-4">
+      <input type="hidden" id="modal-student-id" value="" />
+
+      <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
+        <div class="flex flex-col gap-1 sm:col-span-2">
+          <label for="st-name" class="text-[11px] font-bold text-heading uppercase tracking-wider">Nombre completo <span class="text-danger">*</span></label>
+          <div class="relative">
+            <Icon name="lucide:user" class="absolute left-3 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-muted pointer-events-none" aria-hidden="true" />
+            <input type="text" id="st-name" placeholder="Ej: Ana Martínez" class="w-full pl-9 pr-3 py-2.5 rounded-lg border border-edge bg-neutral-bg/30 text-sm text-heading font-medium placeholder:text-muted focus:outline-none focus:ring-2 focus:ring-brand transition" required />
+          </div>
+        </div>
+
+        <div class="flex flex-col gap-1">
+          <label for="st-email" class="text-[11px] font-bold text-heading uppercase tracking-wider">Correo <span class="text-danger">*</span></label>
+          <!-- Usuario ingresa solo la parte local; @kellyacademy.com se añade automáticamente -->
+          <div class="flex items-center rounded-lg border border-edge bg-neutral-bg/30 focus-within:ring-2 focus-within:ring-brand transition overflow-hidden">
+            <div class="flex items-center pl-3 shrink-0">
+              <Icon name="lucide:mail" class="w-3.5 h-3.5 text-muted pointer-events-none" aria-hidden="true" />
+            </div>
+            <input
+              type="text"
+              id="st-email-user"
+              placeholder="nombreusuario"
+              class="flex-1 pl-2 pr-0 py-2.5 bg-transparent text-sm text-heading font-medium placeholder:text-muted focus:outline-none"
+              autocomplete="off"
+              required
+            />
+            <span class="pr-3 pl-1 text-sm font-semibold text-muted select-none whitespace-nowrap">@kellyacademy.com</span>
+          </div>
+        </div>
+
+        <div class="flex flex-col gap-1">
+          <label for="st-phone" class="text-[11px] font-bold text-heading uppercase tracking-wider">Teléfono <span class="text-[10px] text-subtle font-normal">(9 dígitos)</span></label>
+          <div class="relative">
+            <Icon name="lucide:phone" class="absolute left-3 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-muted pointer-events-none" aria-hidden="true" />
+            <input
+              type="tel"
+              id="st-phone"
+              placeholder="999 159 716"
+              maxlength="11"
+              inputmode="numeric"
+              class="w-full pl-9 pr-3 py-2.5 rounded-lg border border-edge bg-neutral-bg/30 text-sm text-heading font-medium placeholder:text-muted focus:outline-none focus:ring-2 focus:ring-brand transition tracking-widest"
+            />
+          </div>
+        </div>
+
+        <div class="flex flex-col gap-1">
+          <label for="st-password" class="text-[11px] font-bold text-heading uppercase tracking-wider">Contraseña inicial <span class="text-danger">*</span></label>
+          <div class="relative">
+            <Icon name="lucide:lock" class="absolute left-3 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-muted pointer-events-none" aria-hidden="true" />
+            <input type="password" id="st-password" placeholder="Mínimo 8 caracteres" minlength="8" class="w-full pl-9 pr-3 py-2.5 rounded-lg border border-edge bg-neutral-bg/30 text-sm text-heading font-medium placeholder:text-muted focus:outline-none focus:ring-2 focus:ring-brand transition" />
+          </div>
+        </div>
+
+        <div class="flex flex-col gap-1 sm:col-span-2" id="st-status-field">
+          <label for="st-status" class="text-[11px] font-bold text-heading uppercase tracking-wider">Estado de la cuenta</label>
+          <div class="relative">
+            <Icon name="lucide:shield-check" class="absolute left-3 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-muted pointer-events-none" aria-hidden="true" />
+            <select id="st-status" class="w-full pl-9 pr-3 py-2.5 rounded-lg border border-edge bg-neutral-bg/30 text-sm text-heading font-medium focus:outline-none focus:ring-2 focus:ring-brand transition appearance-none">
+              <option value="activo">Activo</option>
+              <option value="inactivo">Inactivo</option>
+              <option value="suspendido">Suspendido</option>
+            </select>
+            <Icon name="lucide:chevron-down" class="absolute right-3 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-muted pointer-events-none" aria-hidden="true" />
+          </div>
+        </div>
+      </div>
+
+      <!-- Nota informativa -->
+      <div class="flex items-start gap-2 bg-brand-soft/20 border border-brand/20 rounded-xl px-3.5 py-2.5">
+        <Icon name="lucide:info" class="w-3.5 h-3.5 text-brand-dark shrink-0 mt-0.5" aria-hidden="true" />
+        <p class="text-[11px] text-subtle font-medium leading-relaxed">
+          El alumno recibirá un correo con sus credenciales. Asígnale cursos desde <strong class="text-heading">Gestionar cursos</strong>.
+        </p>
+      </div>
+    </div>
+    <!-- Footer -->
+    <div class="px-5 py-3.5 border-t border-edge-soft flex items-center justify-end gap-2.5 bg-neutral-bg/20 shrink-0">
+      <button type="button" id="cancel-student-modal" class="px-4 py-2 rounded-lg border border-edge text-sm font-bold text-subtle hover:bg-neutral-subtle hover:text-heading transition-colors">Cancelar</button>
+      <button type="button" id="save-student-btn" class="flex items-center gap-2 px-5 py-2 rounded-lg bg-brand text-white text-sm font-bold hover:bg-brand-dark transition-colors shadow-sm">
+        <span id="save-student-label">Crear Alumno</span>
+        <Icon name="lucide:loader-2" id="save-student-spinner" class="w-4 h-4 animate-spin hidden" aria-hidden="true" />
+      </button>
+    </div>
+  </div>
+</div>
+
+<!-- ═══════════════════════════════════════════════════
+     MODAL: GESTIONAR CURSOS DEL ALUMNO
+════════════════════════════════════════════════════ -->
+<div id="enroll-modal" class="fixed inset-0 z-50 flex items-end sm:items-center justify-center opacity-0 pointer-events-none transition-opacity duration-300" role="dialog" aria-modal="true" aria-labelledby="enroll-modal-title">
+  <div id="enroll-modal-backdrop" class="absolute inset-0 bg-black/50 backdrop-blur-sm cursor-pointer"></div>
+  <div id="enroll-modal-panel" class="relative bg-card w-full sm:w-[88%] sm:max-w-sm max-h-[88vh] rounded-t-2xl sm:rounded-2xl shadow-2xl flex flex-col overflow-hidden transform translate-y-4 sm:scale-95 transition-transform duration-300 border border-edge">
+    <!-- Cabecera -->
+    <div class="px-5 py-4 border-b border-edge-soft flex items-center justify-between bg-neutral-bg/30 shrink-0">
+      <div class="flex items-center gap-2.5">
+        <div class="w-8 h-8 rounded-full bg-brand-soft flex items-center justify-center shrink-0">
+          <Icon name="lucide:book-marked" class="w-4 h-4 text-brand-dark" aria-hidden="true" />
+        </div>
+        <div>
+          <h2 id="enroll-modal-title" class="text-base font-extrabold text-heading">Gestionar Cursos</h2>
+          <p id="enroll-student-name" class="text-[11px] font-semibold text-subtle">Alumno</p>
+        </div>
+      </div>
+      <button id="close-enroll-modal" type="button" class="p-1.5 rounded-full hover:bg-neutral-subtle text-subtle hover:text-heading transition-colors" aria-label="Cerrar">
+        <Icon name="lucide:x" class="w-4 h-4" aria-hidden="true" />
+      </button>
+    </div>
+    <!-- Cuerpo -->
+    <div class="overflow-y-auto flex-1 px-5 py-4 flex flex-col gap-3">
+      <p class="text-[11px] font-semibold text-subtle">Marca los cursos en que estará inscrito el alumno. Desmarca para sacarlo.</p>
+      <div id="enroll-courses-list" class="flex flex-col gap-2">
+        <!-- Generado por JS -->
+      </div>
+    </div>
+    <!-- Footer -->
+    <div class="px-5 py-3.5 border-t border-edge-soft flex items-center justify-end gap-2.5 bg-neutral-bg/20 shrink-0">
+      <button type="button" id="cancel-enroll-modal" class="px-4 py-2 rounded-lg border border-edge text-sm font-bold text-subtle hover:bg-neutral-subtle hover:text-heading transition-colors">Cancelar</button>
+      <button type="button" id="save-enroll-btn" class="flex items-center gap-2 px-5 py-2 rounded-lg bg-brand text-white text-sm font-bold hover:bg-brand-dark transition-colors shadow-sm">
+        <span>Guardar cambios</span>
+        <Icon name="lucide:check" class="w-4 h-4" aria-hidden="true" />
+      </button>
+    </div>
+  </div>
+</div>
+
+<div id="generic-toast" class="fixed bottom-6 right-6 z-[60] flex items-center gap-3 bg-heading text-white px-5 py-4 rounded-2xl shadow-2xl translate-y-20 opacity-0 transition-all duration-500 pointer-events-none" role="status" aria-live="polite">
+  <div id="toast-icon-wrap" class="w-8 h-8 rounded-full bg-success flex items-center justify-center flex-shrink-0">
+    <Icon name="lucide:check" class="w-4 h-4" id="toast-icon" aria-hidden="true" />
+  </div>
+  <p id="toast-text" class="text-sm font-extrabold"></p>
+</div>
+
+<!-- Card flotante de alumno creado -->
+<div
+  id="student-created-card"
+  class="fixed bottom-6 left-1/2 -translate-x-1/2 z-[70] w-[90vw] max-w-sm bg-card border border-brand/20 rounded-2xl shadow-2xl p-5 flex flex-col gap-3 translate-y-40 opacity-0 pointer-events-none transition-all duration-500"
+  role="status"
+  aria-live="polite"
+>
+  <div class="flex items-center gap-3">
+    <div class="w-10 h-10 rounded-full bg-success-soft flex items-center justify-center shrink-0">
+      <Icon name="lucide:user-check" class="w-5 h-5 text-success-dark" aria-hidden="true" />
+    </div>
+    <div>
+      <p class="text-sm font-extrabold text-heading">Alumno registrado en el sistema correctamente.</p>
+      <p id="student-created-email" class="text-[11px] text-subtle font-medium mt-0.5"></p>
+    </div>
+  </div>
+  <button
+    id="send-credentials-btn"
+    type="button"
+    class="flex items-center justify-center gap-2 w-full py-2.5 rounded-xl bg-[#25D366] hover:bg-[#1ebe5d] text-white text-sm font-extrabold transition-colors shadow-sm"
+  >
+    <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
+      <path d="M17.472 14.382c-.297-.149-1.758-.867-2.03-.967-.273-.099-.471-.148-.67.15-.197.297-.767.966-.94 1.164-.173.199-.347.223-.644.075-.297-.15-1.255-.463-2.39-1.475-.883-.788-1.48-1.761-1.653-2.059-.173-.297-.018-.458.13-.606.134-.133.298-.347.446-.52.149-.174.198-.298.298-.497.099-.198.05-.371-.025-.52-.075-.149-.669-1.612-.916-2.207-.242-.579-.487-.5-.669-.51-.173-.008-.371-.01-.57-.01-.198 0-.52.074-.792.372-.272.297-1.04 1.016-1.04 2.479 0 1.462 1.065 2.875 1.213 3.074.149.198 2.096 3.2 5.077 4.487.709.306 1.262.489 1.694.625.712.227 1.36.195 1.871.118.571-.085 1.758-.719 2.006-1.413.248-.694.248-1.289.173-1.413-.074-.124-.272-.198-.57-.347m-5.421 7.403h-.004a9.87 9.87 0 01-5.031-1.378l-.361-.214-3.741.982.998-3.648-.235-.374a9.86 9.86 0 01-1.51-5.26c.001-5.45 4.436-9.884 9.888-9.884 2.64 0 5.122 1.03 6.988 2.898a9.825 9.825 0 012.893 6.994c-.003 5.45-4.437 9.884-9.885 9.884m8.413-18.297A11.815 11.815 0 0012.05 0C5.495 0 .16 5.335.157 11.892c0 2.096.547 4.142 1.588 5.945L.057 24l6.305-1.654a11.882 11.882 0 005.683 1.448h.005c6.554 0 11.89-5.335 11.893-11.893a11.821 11.821 0 00-3.48-8.413z"/>
+    </svg>
+    Enviar Credenciales por WhatsApp
+  </button>
+  <button
+    id="dismiss-created-card-btn"
+    type="button"
+    class="text-[11px] text-subtle text-center hover:text-heading transition-colors"
+  >
+    Cerrar
+  </button>
+</div>
+
+<script>
+  import { createUser, updateUser, updateUserStatus, deleteUser, assignCourse, removeCourse } from '../../core/services/users.service';
+
+  const tokenMatch = document.cookie.match(/(?:^|; )ka_session=([^;]*)/);
+  const token = tokenMatch ? tokenMatch[1] : '';
+
+  // ── Datos y estado ───────────────────────────────────────
+  type StudentStatus = 'activo' | 'en_riesgo' | 'inactivo' | 'suspendido';
+
+  const COURSES = window.COURSES_DATA || [];
+
+  let enrollStudentId = '';
+  let enrollCurrentCourseIds: string[] = [];
+
+  // ── Helpers modal ────────────────────────────────────────
+  function openModal(id: string) {
+    const m = document.getElementById(id)!;
+    const p = m.querySelector('[id$="-panel"]') as HTMLElement;
+    m.classList.remove('opacity-0','pointer-events-none');
+    p?.classList.remove('translate-y-4','sm:scale-95','scale-95');
+    document.body.style.overflow = 'hidden';
+  }
+  function closeModal(id: string) {
+    const m = document.getElementById(id)!;
+    const p = m.querySelector('[id$="-panel"]') as HTMLElement;
+    m.classList.add('opacity-0','pointer-events-none');
+    p?.classList.add('translate-y-4','sm:scale-95','scale-95');
+    document.body.style.overflow = '';
+  }
+
+  function showToast(msg: string, success = true) {
+    const toast = document.getElementById('generic-toast')!;
+    const iconWrap = document.getElementById('toast-icon-wrap')!;
+    const text = document.getElementById('toast-text')!;
+    text.textContent = msg;
+    iconWrap.className = `w-8 h-8 rounded-full flex items-center justify-center flex-shrink-0 ${success ? 'bg-success' : 'bg-danger'}`;
+    toast.classList.remove('translate-y-20','opacity-0','pointer-events-none');
+    toast.classList.add('translate-y-0','opacity-100');
+    setTimeout(() => {
+      toast.classList.add('translate-y-20','opacity-0','pointer-events-none');
+      toast.classList.remove('translate-y-0','opacity-100');
+    }, 3000);
+  }
+
+
+  // ── Formateador automático teléfono (XXX XXX XXX) ────────────
+  document.getElementById('st-phone')?.addEventListener('input', (e) => {
+    const input = e.target as HTMLInputElement;
+    let digits = input.value.replace(/\D/g, '').slice(0, 9);
+    let formatted = '';
+    for (let i = 0; i < digits.length; i++) {
+      if (i > 0 && i % 3 === 0) formatted += ' ';
+      formatted += digits[i];
+    }
+    input.value = formatted;
+  });
+
+  // ── Botón Enviar Credenciales por WhatsApp ────────────────────
+  document.getElementById('send-credentials-btn')?.addEventListener('click', () => {
+    const card     = document.getElementById('student-created-card')!;
+    const phone    = card.dataset.phone    ?? '';
+    const name     = card.dataset.name     ?? 'Alumno';
+    const email    = card.dataset.email    ?? '';
+    const password = card.dataset.password ?? '';
+
+    if (!phone) {
+      showToast('No se registró un número de teléfono para este alumno.', true);
+      return;
+    }
+
+    // Número en formato internacional (Perú +51 por defecto si son 9 dígitos)
+    const intlPhone = phone.startsWith('51') ? phone : `51${phone}`;
+    const message = encodeURIComponent(
+      `¡Hola ${name}! 👋\n\nTus credenciales de acceso a *Kelly Academy* son:\n\n📧 *Correo:* ${email}\n🔑 *Contraseña:* ${password}\n\nIngresa en: http://localhost:4321\n\n_Por seguridad, te recomendamos cambiar tu contraseña al iniciar sesión._`
+    );
+    window.open(`https://wa.me/${intlPhone}?text=${message}`, '_blank');
+  });
+
+  // ── Cerrar card flotante ──────────────────────────────────────
+  document.getElementById('dismiss-created-card-btn')?.addEventListener('click', () => {
+    const card = document.getElementById('student-created-card')!;
+    card.classList.add('translate-y-40', 'opacity-0', 'pointer-events-none');
+    card.classList.remove('translate-y-0', 'opacity-100');
+    window.location.reload();
+  });
+
+
+
+  // ── FILTROS Y BÚSQUEDA ───────────────────────────────────
+  const searchInput = document.getElementById('student-search') as HTMLInputElement;
+  const filterBtns  = document.querySelectorAll<HTMLButtonElement>('.filter-btn');
+  let   activeFilter = 'todos';
+
+  function applyFilters() {
+    const q = searchInput.value.toLowerCase().trim();
+    let visible = 0;
+    document.querySelectorAll<HTMLTableRowElement>('.student-row').forEach(row => {
+      const name   = row.dataset.name ?? '';
+      const email  = row.dataset.email ?? '';
+      const status = row.dataset.status ?? '';
+      const matchSearch = !q || name.includes(q) || email.includes(q);
+      const matchFilter = activeFilter === 'todos' || status === activeFilter;
+      const show = matchSearch && matchFilter;
+      row.style.display = show ? '' : 'none';
+      if(show) visible++;
+    });
+    const countEl = document.getElementById('table-count');
+    if(countEl) countEl.textContent = `Mostrando ${visible} alumno${visible !== 1 ? 's' : ''}`;
+  }
+
+  searchInput.addEventListener('input', applyFilters);
+  filterBtns.forEach(btn => {
+    btn.addEventListener('click', () => {
+      activeFilter = btn.dataset.filter ?? 'todos';
+      filterBtns.forEach(b => {
+        const isActive = b.dataset.filter === activeFilter;
+        b.className = `filter-btn px-4 py-2 rounded-xl text-xs font-bold border transition-colors ${
+          isActive ? 'bg-brand text-white border-brand' : 'bg-card text-subtle border-edge hover:border-brand/30 hover:text-heading'
+        }`;
+      });
+      applyFilters();
+    });
+  });
+
+  // ── MODAL CREAR / EDITAR ALUMNO ──────────────────────────
+  function openStudentModal(mode: 'create' | 'edit', data?: {id:string,name:string,email:string,phone:string,status:string}) {
+    const title    = document.getElementById('student-modal-title')!;
+    const saveBtn  = document.getElementById('save-student-label')!;
+    const idField  = document.getElementById('modal-student-id')  as HTMLInputElement;
+    const nameEl   = document.getElementById('st-name')           as HTMLInputElement;
+    const emailUser= document.getElementById('st-email-user')     as HTMLInputElement;
+    const phoneEl  = document.getElementById('st-phone')          as HTMLInputElement;
+    const passEl   = document.getElementById('st-password')       as HTMLInputElement;
+    const statusEl = document.getElementById('st-status')         as HTMLSelectElement;
+    const passField= document.getElementById('st-password')?.closest('.flex') as HTMLElement | null;
+
+    if(mode === 'create') {
+      title.textContent = 'Nuevo Alumno';
+      saveBtn.textContent = 'Crear Alumno';
+      idField.value = '';
+      nameEl.value = ''; emailUser.value = ''; phoneEl.value = ''; passEl.value = '';
+      statusEl.value = 'activo';
+    } else if(data) {
+      title.textContent = 'Editar Alumno';
+      saveBtn.textContent = 'Guardar cambios';
+      idField.value  = data.id;
+      nameEl.value   = data.name;
+      // Extraer solo la parte local del email (antes del @)
+      emailUser.value = data.email.includes('@') ? data.email.split('@')[0] : data.email;
+      // Formatear teléfono al cargarlo
+      const digits = (data.phone || '').replace(/\D/g, '').slice(0, 9);
+      let formatted = '';
+      for (let i = 0; i < digits.length; i++) {
+        if (i > 0 && i % 3 === 0) formatted += ' ';
+        formatted += digits[i];
+      }
+      phoneEl.value  = formatted;
+      statusEl.value = data.status;
+      passEl.value = '';
+      if(passField) passField.style.opacity = '0.5';
+    }
+    openModal('student-modal');
+  }
+
+  document.getElementById('open-create-student-btn')?.addEventListener('click', () => openStudentModal('create'));
+  document.getElementById('close-student-modal')?.addEventListener('click', () => closeModal('student-modal'));
+  document.getElementById('cancel-student-modal')?.addEventListener('click', () => closeModal('student-modal'));
+  document.getElementById('student-modal-backdrop')?.addEventListener('click', () => closeModal('student-modal'));
+
+  document.querySelectorAll<HTMLButtonElement>('.action-edit-btn').forEach(btn => {
+    btn.addEventListener('click', () => {
+      openStudentModal('edit', {
+        id:     btn.dataset.id ?? '',
+        name:   btn.dataset.name ?? '',
+        email:  btn.dataset.email ?? '',
+        phone:  btn.dataset.phone ?? '',
+        status: btn.dataset.status ?? 'activo',
+      });
+    });
+  });
+
+  document.getElementById('save-student-btn')?.addEventListener('click', async () => {
+    const nameEl    = document.getElementById('st-name')        as HTMLInputElement;
+    const emailUser = document.getElementById('st-email-user') as HTMLInputElement;
+    const phoneEl   = document.getElementById('st-phone')      as HTMLInputElement;
+    const passEl    = document.getElementById('st-password')   as HTMLInputElement;
+    const statusEl  = document.getElementById('st-status')     as HTMLSelectElement;
+    const idField   = document.getElementById('modal-student-id') as HTMLInputElement;
+
+    // Construir email completo
+    const emailValue = emailUser.value.trim().replace(/\s+/g, '') + '@kellyacademy.com';
+    // Extraer solo dígitos del teléfono para guardar y WhatsApp
+    const rawPhone = phoneEl.value.replace(/\D/g, '');
+
+    if (!nameEl.value.trim() || !emailUser.value.trim()) {
+      nameEl.reportValidity();
+      if (!emailUser.value.trim()) { emailUser.focus(); }
+      return;
+    }
+    
+    const isEdit = !!idField.value;
+    if(!isEdit && !passEl.value.trim()) {
+      passEl.reportValidity(); return;
+    }
+    if(!isEdit && passEl.value.trim().length < 8) {
+      showToast('La contraseña debe tener al menos 8 caracteres.', true);
+      return;
+    }
+
+    const btn  = document.getElementById('save-student-btn')   as HTMLButtonElement;
+    const lbl  = document.getElementById('save-student-label') as HTMLSpanElement;
+    const spin = document.getElementById('save-student-spinner') as SVGElement;
+    btn.disabled = true; lbl.classList.add('hidden'); spin.classList.remove('hidden');
+    
+    try {
+      if (isEdit) {
+        await updateUser(token, idField.value, {
+          fullName: nameEl.value.trim(),
+          email: emailValue,
+          phone: rawPhone || undefined
+        });
+        await updateUserStatus(token, idField.value, { status: statusEl.value as StudentStatus });
+      } else {
+        await createUser(token, {
+          fullName: nameEl.value.trim(),
+          email: emailValue,
+          phone: rawPhone || undefined,
+          password: passEl.value,
+          role: 'estudiante'
+        });
+      }
+
+      btn.disabled = false; lbl.classList.remove('hidden'); spin.classList.add('hidden');
+      closeModal('student-modal');
+
+      if (isEdit) {
+        showToast('✓ Alumno actualizado');
+        setTimeout(() => window.location.reload(), 1500);
+      } else {
+        // Mostrar card flotante de confirmación
+        const createdCard  = document.getElementById('student-created-card')!;
+        const createdEmail = document.getElementById('student-created-email')!;
+        createdEmail.textContent = emailValue;
+
+        // Guardar datos para el botón WhatsApp
+        createdCard.dataset.phone    = rawPhone;
+        createdCard.dataset.name     = nameEl.value.trim();
+        createdCard.dataset.email    = emailValue;
+        createdCard.dataset.password = passEl.value;
+
+        createdCard.classList.remove('translate-y-40', 'opacity-0', 'pointer-events-none');
+        createdCard.classList.add('translate-y-0', 'opacity-100');
+        setTimeout(() => window.location.reload(), 4000);
+      }
+    } catch(err: unknown) {
+      console.error('Error al guardar alumno:', err);
+      const msg = Array.isArray(err?.message)
+        ? err.message.join('\n')
+        : (err?.message ?? 'Error desconocido');
+      showToast(`Error al guardar el alumno: ${msg}`, true);
+      btn.disabled = false; lbl.classList.remove('hidden'); spin.classList.add('hidden');
+    }
+  });
+
+  // ── MODAL GESTIONAR CURSOS ────────────────────────────────
+  function openEnrollModal(id: string, name: string, courseIds: string[]) {
+    enrollStudentId = id;
+    enrollCurrentCourseIds = [...courseIds];
+    const nameEl = document.getElementById('enroll-student-name')!;
+    nameEl.textContent = name;
+    const list = document.getElementById('enroll-courses-list')!;
+    list.innerHTML = COURSES.map(c => {
+      const enrolled = courseIds.includes(c.id);
+      return `
+        <label class="flex items-center gap-3 p-3.5 rounded-xl border-2 cursor-pointer transition-all hover:bg-brand-soft/20 ${enrolled ? 'border-brand bg-brand-soft/20' : 'border-edge'}">
+          <input type="checkbox" value="${c.id}" ${enrolled?'checked':''} class="w-4 h-4 rounded border-edge text-brand focus:ring-brand bg-card cursor-pointer" />
+          <div class="flex-1 min-w-0">
+            <p class="text-sm font-bold text-heading leading-tight">${c.name}</p>
+            <p class="text-xs text-subtle font-medium">${c.code}</p>
+          </div>
+          ${enrolled ? '<span class="text-[10px] font-bold text-brand bg-brand-soft px-2 py-0.5 rounded-full shrink-0">Inscrito</span>' : ''}
+        </label>`;
+    }).join('');
+    // Actualizar estilo al cambiar checkbox
+    list.querySelectorAll<HTMLInputElement>('input[type=checkbox]').forEach(cb => {
+      cb.addEventListener('change', () => {
+        const lbl = cb.closest('label')!;
+        if(cb.checked) {
+          lbl.classList.add('border-brand','bg-brand-soft/20');
+          lbl.classList.remove('border-edge');
+        } else {
+          lbl.classList.remove('border-brand','bg-brand-soft/20');
+          lbl.classList.add('border-edge');
+        }
+      });
+    });
+    openModal('enroll-modal');
+  }
+
+  document.getElementById('close-enroll-modal')?.addEventListener('click', () => closeModal('enroll-modal'));
+  document.getElementById('cancel-enroll-modal')?.addEventListener('click', () => closeModal('enroll-modal'));
+  document.getElementById('enroll-modal-backdrop')?.addEventListener('click', () => closeModal('enroll-modal'));
+
+  document.querySelectorAll<HTMLButtonElement>('.action-enroll-btn').forEach(btn => {
+    btn.addEventListener('click', () => {
+      const ids = JSON.parse(btn.dataset.courseids ?? '[]');
+      openEnrollModal(btn.dataset.id ?? '', btn.dataset.name ?? '', ids);
+    });
+  });
+
+  document.getElementById('save-enroll-btn')?.addEventListener('click', async () => {
+    const btn = document.getElementById('save-enroll-btn') as HTMLButtonElement;
+    btn.disabled = true;
+
+    try {
+      const list = document.getElementById('enroll-courses-list')!;
+      const checkboxes = list.querySelectorAll<HTMLInputElement>('input[type=checkbox]');
+      
+      const enrollPromises: Promise<void>[] = [];
+      
+      checkboxes.forEach(cb => {
+        const courseId = cb.value;
+        const wasEnrolled = enrollCurrentCourseIds.includes(courseId);
+        const isEnrolled = cb.checked;
+        
+        if (isEnrolled && !wasEnrolled) {
+          enrollPromises.push(assignCourse(token, enrollStudentId, { courseId }));
+        } else if (!isEnrolled && wasEnrolled) {
+          enrollPromises.push(removeCourse(token, enrollStudentId, courseId));
+        }
+      });
+
+      await Promise.all(enrollPromises);
+
+      btn.disabled = false;
+      closeModal('enroll-modal');
+      showToast('✓ Cursos actualizados correctamente');
+      
+      setTimeout(() => window.location.reload(), 1500);
+    } catch(err) {
+      console.error(err);
+      showToast('Error al actualizar los cursos.', true);
+      btn.disabled = false;
+    }
+  });
+
+  // ── MODAL ELIMINAR (usando componente global DeleteConfirmModal) ────────────────
+  document.querySelectorAll<HTMLButtonElement>('.action-delete-btn').forEach(btn => {
+    btn.addEventListener('click', () => {
+      const studentId = btn.dataset.id ?? '';
+      const studentName = btn.dataset.name ?? 'este alumno';
+      window.openDeleteModal('delete-student-modal', studentName, async () => {
+        await deleteUser(token, studentId);
+        const row = document.querySelector<HTMLTableRowElement>(`.student-row[data-id="${studentId}"]`);
+        if (row) {
+          row.style.transition = 'opacity 0.3s, transform 0.3s';
+          row.style.opacity = '0';
+          row.style.transform = 'translateX(20px)';
+          setTimeout(() => row.remove(), 300);
+        }
+        showToast('Alumno eliminado del sistema', false);
+      });
+    });
+  });
+
+  // Cerrar modales con Escape
+  document.addEventListener('keydown', e => {
+    if(e.key !== 'Escape') return;
+    ['student-modal','enroll-modal'].forEach(id => {
+      if(!document.getElementById(id)?.classList.contains('opacity-0')) closeModal(id);
+    });
+  });
+</script>
+
+<DeleteConfirmModal
+  modalId="delete-student-modal"
+  title="Eliminar Alumno"
+  description="La cuenta del alumno será eliminada permanentemente del sistema."
+/>
+
+</TeacherDashboardLayout>

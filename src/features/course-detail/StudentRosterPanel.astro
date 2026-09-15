@@ -1,0 +1,66 @@
+---
+import { Icon } from 'astro-icon/components';
+import Button from '../../components/ui/Button.astro';
+
+interface Student {
+  name: string;
+  progressPercent: number;
+  isAtRisk: boolean;
+  avatarInitials?: string;
+  avatarSrc?: string;
+}
+
+interface Props {
+  studentCount: number;
+  students: Student[];
+}
+
+const { studentCount, students } = Astro.props;
+---
+
+<aside class="bg-card rounded-xl border border-edge flex flex-col overflow-hidden">
+  <div class="p-4 border-b border-edge-soft">
+    <div class="flex items-center gap-2 mb-3">
+      <Icon name="lucide:users" class="w-4 h-4 text-subtle" aria-hidden="true" />
+      <h2 class="text-sm font-bold text-heading">Estudiantes ({studentCount})</h2>
+    </div>
+    <div class="relative">
+      <Icon name="lucide:search" class="w-3.5 h-3.5 absolute left-3 top-1/2 -translate-y-1/2 text-muted" aria-hidden="true" />
+      <input
+        type="search"
+        placeholder="Buscar alumno..."
+        aria-label="Buscar alumno en la lista"
+        class="w-full pl-8 pr-3 py-1.5 text-sm border border-edge rounded-lg focus:outline-none focus:ring-2 focus:ring-brand-soft focus:border-brand"
+      />
+    </div>
+  </div>
+
+  <ul class="divide-y divide-edge-soft flex-1" aria-label="Lista de estudiantes">
+    {students.map((student) => (
+      <li class="flex items-center gap-3 px-4 py-3">
+        {student.avatarSrc ? (
+          <img src={student.avatarSrc} alt={`Foto de ${student.name}`}
+            class="w-8 h-8 rounded-full object-cover flex-shrink-0" />
+        ) : (
+          <div class="w-8 h-8 rounded-full bg-neutral-subtle flex items-center justify-center text-xs font-bold text-subtle flex-shrink-0"
+            aria-hidden="true">
+            {student.avatarInitials ?? student.name.slice(0, 2).toUpperCase()}
+          </div>
+        )}
+        <div class="flex-1 min-w-0">
+          <p class="text-sm font-semibold text-heading truncate">{student.name}</p>
+          <p class={`text-xs font-medium ${student.isAtRisk ? 'text-brand' : 'text-success-dark'}`}>
+            {student.isAtRisk ? `• En riesgo: ${student.progressPercent}%` : `• Progreso: ${student.progressPercent}%`}
+          </p>
+        </div>
+      </li>
+    ))}
+  </ul>
+
+  <div class="p-4 border-t border-edge-soft">
+    <Button variant="ghost" class="w-full justify-center gap-2 text-subtle">
+      <Icon name="lucide:mail" class="w-4 h-4" aria-hidden="true" />
+      Mensaje a todos
+    </Button>
+  </div>
+</aside>

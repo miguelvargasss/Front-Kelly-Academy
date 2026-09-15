@@ -1,0 +1,75 @@
+---
+import DashboardLayout from '../../layouts/DashboardLayout.astro';
+import { Icon } from 'astro-icon/components';
+import { APP_ROUTES } from '../../core/config/paths';
+import { getMyCourses } from '../../core/services/api';
+import type { CourseEnrollment } from '../../core/types/api.types';
+
+export const prerender = false;
+
+const token = Astro.cookies.get('ka_session')?.value ?? '';
+let myCourses: CourseEnrollment[] = [];
+
+try {
+  const coursesData = await getMyCourses(token);
+  myCourses = coursesData || [];
+} catch (error: unknown) {
+  if (error?.statusCode === 401) return Astro.redirect('/logout');
+  console.error('Error fetching student courses:', error);
+}
+---
+
+<DashboardLayout pageTitle="Mis Cursos" breadcrumb="Cursos" activeNav="cursos">
+  <div class="max-w-7xl mx-auto flex flex-col gap-8">
+    <div class="flex items-center gap-2.5 mb-2 mt-4">
+      <div class="bg-brand text-white p-1.5 rounded-lg">
+        <Icon name="lucide:book-open" class="w-6 h-6" />
+      </div>
+      <h1 class="text-3xl font-extrabold text-heading">
+        Mis Cursos
+      </h1>
+    </div>
+
+    <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6">
+      {myCourses.length === 0 ? (
+        <div class="col-span-full bg-card rounded-3xl p-8 border border-edge text-center mt-4">
+          <p class="text-subtle italic">Aún no estás inscrito en ningún curso.</p>
+        </div>
+      ) : myCourses.map((enrollment) => (
+        <a href={APP_ROUTES.courseDetail(enrollment.courseId)} class="bg-brand-soft/40 rounded-3xl overflow-hidden flex flex-col relative group cursor-pointer border border-transparent hover:border-brand/20 transition-colors no-underline">
+          <div class="h-40 bg-gradient-to-b from-black/40 to-black/80 relative p-4 flex flex-col justify-end">
+            <div class="flex items-end justify-between relative z-10 w-full">
+              <span class="bg-white text-heading text-xs font-bold px-3 py-1.5 rounded-md">
+                {enrollment.course?.level || 'Nivel Básico'}
+              </span>
+              <span class="text-white text-sm font-bold shadow-sm">
+                {Math.round(enrollment.progress || 0)}% Completado
+              </span>
+            </div>
+          </div>
+          
+          <div class="p-6 flex-1 flex flex-col">
+            <h3 class="text-xl font-extrabold text-heading leading-tight mb-3">
+              {enrollment.course?.title}
+            </h3>
+            <p class="text-sm text-subtle font-medium line-clamp-2 mb-6">
+              {enrollment.course?.description}
+            </p>
+            
+            <div class="mt-auto">
+              <div class="h-2 bg-white rounded-full overflow-hidden mb-3">
+                <div class="h-full bg-brand-dark rounded-full" style={`width: ${enrollment.progress || 0}%;`}></div>
+              </div>
+              <div class="flex items-center justify-between">
+                <span class="text-xs text-subtle font-semibold">Continuar Aprendizaje</span>
+                <span class="text-xs text-heading font-bold flex items-center gap-1 group-hover:text-brand transition-colors">
+                  Entrar <Icon name="lucide:chevron-right" class="w-3.5 h-3.5" />
+                </span>
+              </div>
+            </div>
+          </div>
+        </a>
+      ))}
+    </div>
+  </div>
+</DashboardLayout>

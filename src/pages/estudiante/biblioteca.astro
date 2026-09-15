@@ -1,0 +1,130 @@
+---
+/**
+ * estudiante/biblioteca.astro — Biblioteca de Recursos
+ * Recursos publicados por profesores. Endpoint: GET /library/public
+ */
+import DashboardLayout from '../../layouts/DashboardLayout.astro';
+import { Icon } from 'astro-icon/components';
+import { getPublicLibraryResources } from '../../core/services/api';
+
+export const prerender = false;
+
+const token = Astro.cookies.get('ka_session')?.value ?? '';
+let resources: any[] = [];
+let fetchError = false;
+
+try {
+  const data = await getPublicLibraryResources(token, 1, 50);
+  resources = Array.isArray(data) ? data : (data?.resources ?? []);
+} catch (error: any) {
+  if (error?.statusCode === 401) return Astro.redirect('/logout');
+  fetchError = true;
+  console.error('Error fetching public library resources:', error);
+}
+
+function getFileIcon(type: string, mimeType?: string): string {
+  const t = (type ?? '').toLowerCase();
+  const m = (mimeType ?? '').toLowerCase();
+  if (t === 'video'        || m.startsWith('video'))   return 'lucide:video';
+  if (t === 'audio'        || m.startsWith('audio'))   return 'lucide:headphones';
+  if (t === 'imagen'       || m.startsWith('image'))   return 'lucide:image';
+  if (t === 'presentacion' || m.includes('presenta'))  return 'lucide:presentation';
+  if (t === 'enlace')                                  return 'lucide:external-link';
+  return 'lucide:file-text'; // documento / default
+}
+
+const typeLabel: Record<string, string> = {
+  documento:    'Documento',
+  video:        'Video',
+  presentacion: 'Presentación',
+  audio:        'Audio',
+  enlace:       'Enlace',
+  imagen:       'Imagen',
+};
+
+function formatBytes(bytes: number | null): string {
+  if (!bytes || bytes === 0) return '';
+  if (bytes < 1024)           return `${bytes} B`;
+  if (bytes < 1024 * 1024)    return `${(bytes / 1024).toFixed(1)} KB`;
+  return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+}
+---
+
+<DashboardLayout pageTitle="Biblioteca" breadcrumb="Biblioteca" activeNav="biblioteca">
+  <div class="max-w-5xl mx-auto flex flex-col gap-8">
+
+    <!-- Encabezado -->
+    <div class="flex items-center gap-3">
+      <div class="bg-brand text-white p-2 rounded-xl">
+        <Icon name="lucide:library" class="w-6 h-6" />
+      </div>
+      <div>
+        <h1 class="text-3xl font-extrabold text-heading">Biblioteca</h1>
+        <p class="text-sm text-subtle font-medium mt-0.5">
+          Recursos publicados por tus profesores
+        </p>
+      </div>
+    </div>
+
+    {fetchError ? (
+      <div class="bg-danger-soft border border-danger/20 rounded-2xl p-6 text-center">
+        <Icon name="lucide:alert-circle" class="w-8 h-8 text-danger mx-auto mb-2" />
+        <p class="text-sm font-semibold text-danger-dark">No se pudieron cargar los recursos. Intenta recargar.</p>
+      </div>
+    ) : resources.length === 0 ? (
+      <div class="bg-card border border-edge rounded-3xl p-12 text-center">
+        <Icon name="lucide:book-open" class="w-12 h-12 text-subtle mx-auto mb-4" />
+        <h2 class="text-xl font-extrabold text-heading mb-2">Sin recursos disponibles</h2>
+        <p class="text-subtle text-sm">La biblioteca está vacía. Los recursos publicados por tus profesores aparecerán aquí.</p>
+      </div>
+    ) : (
+      <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-5">
+        {resources.map((resource: any) => {
+          const icon = getFileIcon(resource.type, resource.mimeType);
+          const label = typeLabel[resource.type] ?? resource.type ?? 'Archivo';
+          const isLink = resource.type === 'enlace';
+          return (
+            <a
+              href={resource.fileUrl ?? '#'}
+              target="_blank"
+              rel="noopener noreferrer"
+              class="bg-card border border-edge rounded-2xl p-5 flex flex-col gap-4 hover:shadow-md hover:border-brand/20 transition-all group no-underline"
+            >
+              <!-- Ícono de tipo -->
+              <div class="flex items-start justify-between">
+                <div class="w-11 h-11 bg-brand-soft rounded-xl flex items-center justify-center">
+                  <Icon name={icon} class="w-5 h-5 text-brand-dark" />
+                </div>
+                <Icon
+                  name={isLink ? 'lucide:external-link' : 'lucide:download'}
+                  class="w-4 h-4 text-subtle group-hover:text-brand transition-colors mt-1"
+                />
+              </div>
+
+              <!-- Info -->
+              <div class="flex-1 min-w-0">
+                <h3 class="text-sm font-extrabold text-heading leading-tight line-clamp-2 group-hover:text-brand transition-colors">
+                  {resource.title}
+                </h3>
+                {resource.description && (
+                  <p class="text-xs text-subtle mt-1.5 line-clamp-2 leading-relaxed">{resource.description}</p>
+                )}
+              </div>
+
+              <!-- Meta (tipo + tamaño) -->
+              <div class="flex items-center justify-between">
+                <span class="text-[10px] font-bold bg-neutral-subtle text-subtle px-2.5 py-1 rounded-full uppercase tracking-wide">
+                  {label}
+                </span>
+                {resource.fileSizeBytes && (
+                  <span class="text-xs text-subtle font-medium">{formatBytes(resource.fileSizeBytes)}</span>
+                )}
+              </div>
+            </a>
+          );
+        })}
+      </div>
+    )}
+
+  </div>
+</DashboardLayout>

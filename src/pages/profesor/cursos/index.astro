@@ -1,0 +1,778 @@
+---
+/**
+ * profesor/cursos/index.astro — Lista de Cursos del Profesor
+ * ─────────────────────────────────────────────────────────────────
+ * Grid de tarjetas de cursos con métricas de grupo y acciones de gestión.
+ */
+import TeacherDashboardLayout from '../../../layouts/TeacherDashboardLayout.astro';
+import TeacherCourseCard from '../../../features/teacher/TeacherCourseCard.astro';
+import { Icon } from 'astro-icon/components';
+import { getCourses, getLevels, getCourseStats } from '../../../core/services/api';
+import type { Course, Level } from '../../../core/types/api.types';
+
+// Obtener token
+const token = Astro.cookies.get('ka_session')?.value ?? '';
+
+let teacherCourses: { courseId: string, courseTitle: string, courseGroup: string, courseCode: string, studentCount: number, averageProgress: number, status: string, bannerGradient: string, pendingSubmissions: number }[] = [];
+let levels: Level[] = [];
+
+try {
+  // Cargar cursos del profesor (la API retorna los del usuario actual por defecto)
+  const coursesResponse = await getCourses(token);
+  
+  // Cargar stats de los cursos en paralelo
+  const coursesWithStats = await Promise.all(
+    coursesResponse.courses.map(async (c: Course) => {
+      const stats = await getCourseStats(token, c.id).catch(() => ({ studentCount: 0 }));
+      
+      return {
+        courseId: c.id,
+        courseTitle: c.title,
+        courseGroup: `${c.groupNumber || 'Grupo Único'} (${c.modality})`,
+        courseCode: c.code,
+        studentCount: stats.studentCount || 0,
+        averageProgress: 0,
+        status: c.status.toUpperCase(),
+        bannerGradient: c.bannerGradient || 'from-[#8B1A00] via-[#C0291A] to-[#E8402C]',
+        pendingSubmissions: 0,
+      };
+    })
+  );
+  
+  teacherCourses = coursesWithStats;
+
+  // Cargar niveles desde la BD
+  levels = await getLevels(token);
+} catch (error) {
+  console.error("Error al cargar datos en Cursos Profesor:", error);
+}
+---
+
+<TeacherDashboardLayout pageTitle="Mis Cursos" breadcrumb="Mis Cursos" activeNav="cursos">
+
+  <div class="max-w-7xl mx-auto flex flex-col gap-8">
+
+    <!-- Encabezado -->
+    <div class="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
+      <div>
+        <h1 class="text-3xl font-extrabold text-heading">Mis Cursos</h1>
+        <p class="text-subtle font-medium mt-1 text-sm">{teacherCourses.length} cursos asignados este período.</p>
+      </div>
+      <button
+        type="button"
+        id="new-course-btn"
+        class="flex items-center gap-2 bg-brand text-white font-bold text-sm px-5 py-3 rounded-xl hover:bg-brand-dark transition-colors shadow-sm w-full sm:w-auto justify-center"
+      >
+        <Icon name="lucide:plus-circle" class="w-4 h-4" aria-hidden="true" />
+        Crear Nuevo Curso
+      </button>
+    </div>
+
+    <!-- Filtros rápidos -->
+    <nav aria-label="Filtrar cursos" class="flex items-center gap-2 flex-wrap">
+      {['Todos', 'Abiertos', 'En progreso', 'Cerrados'].map((filterLabel, idx) => {
+        let val = 'TODOS';
+        if (filterLabel === 'Abiertos') val = 'ABIERTO';
+        if (filterLabel === 'En progreso') val = 'EN_PROGRESO';
+        if (filterLabel === 'Cerrados') val = 'CERRADO';
+        
+        return (
+          <button
+            type="button"
+            data-filter={val}
+            class={`course-filter-btn px-4 py-2 rounded-xl text-sm font-semibold border transition-colors ${
+              idx === 0
+                ? 'bg-brand text-white border-brand'
+                : 'bg-card text-subtle border-edge hover:border-brand/30 hover:text-heading'
+            }`}
+          >
+            {filterLabel}
+          </button>
+        );
+      })}
+    </nav>
+
+    <!-- Resumen de métricas -->
+    <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
+      {[
+        { label: 'Cursos Activos', value: teacherCourses.filter(c => c.status === 'ABIERTO' || c.status === 'EN_PROGRESO').length.toString(), icon: 'lucide:book-open' },
+        { label: 'Cursos Cerrados', value: teacherCourses.filter(c => c.status === 'CERRADO').length.toString(), icon: 'lucide:archive' },
+        { label: 'Total Cursos', value: teacherCourses.length.toString(), icon: 'lucide:layers' },
+      ].map((metric) => (
+        <article class="bg-brand-soft/40 rounded-2xl p-5 flex items-center gap-4">
+          <div class="w-10 h-10 rounded-xl bg-brand-soft flex items-center justify-center shrink-0">
+            <Icon name={metric.icon} class="w-5 h-5 text-brand-dark" aria-hidden="true" />
+          </div>
+          <div>
+            <p class="text-2xl font-extrabold text-heading">{metric.value}</p>
+            <p class="text-xs text-subtle font-semibold">{metric.label}</p>
+          </div>
+        </article>
+      ))}
+    </div>
+
+    <!-- Grid de Cursos -->
+    <section aria-labelledby="courses-grid-heading">
+      <h2 id="courses-grid-heading" class="sr-only">Lista de cursos</h2>
+      <div class="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-6">
+        {teacherCourses.map((course) => (
+          <TeacherCourseCard {...course} />
+        ))}
+      </div>
+    </section>
+
+  </div>
+
+
+<!-- ░░ MODAL: CREAR NUEVO CURSO (3 pasos) ░░ -->
+<div
+  id="new-course-modal"
+  class="fixed inset-0 z-50 flex items-end sm:items-center justify-center opacity-0 pointer-events-none transition-opacity duration-300"
+  role="dialog"
+  aria-modal="true"
+  aria-labelledby="new-course-modal-title"
+>
+  <div id="new-course-backdrop" class="absolute inset-0 bg-black/50 backdrop-blur-sm cursor-pointer"></div>
+
+  <div
+    id="new-course-panel"
+    class="relative bg-card w-full sm:w-[92%] sm:max-w-2xl max-h-[95vh] rounded-t-3xl sm:rounded-3xl shadow-2xl flex flex-col overflow-hidden transform translate-y-4 sm:scale-95 transition-transform duration-300 border border-edge"
+  >
+
+    <!-- ── Cabecera del modal ── -->
+    <div class="px-6 py-5 border-b border-edge-soft flex items-center justify-between bg-neutral-bg/30 shrink-0">
+      <div class="flex items-center gap-3">
+        <div class="w-10 h-10 rounded-full bg-brand-soft flex items-center justify-center shrink-0">
+          <Icon name="lucide:book-plus" class="w-5 h-5 text-brand-dark" aria-hidden="true" />
+        </div>
+        <div>
+          <h2 id="new-course-modal-title" class="text-lg font-extrabold text-heading">Crear Nuevo Curso</h2>
+          <p id="step-label" class="text-xs font-semibold text-subtle mt-0.5">Paso 1 de 3 — Información básica</p>
+        </div>
+      </div>
+      <button id="close-new-course-btn" type="button" class="p-2 rounded-full hover:bg-neutral-subtle text-subtle hover:text-heading transition-colors" aria-label="Cerrar">
+        <Icon name="lucide:x" class="w-5 h-5" aria-hidden="true" />
+      </button>
+    </div>
+
+    <!-- Barra de progreso de pasos -->
+    <div class="flex items-center gap-0 shrink-0 px-6 pt-4 pb-1">
+      {[1, 2, 3].map((s) => (
+        <div class="flex items-center flex-1">
+          <div
+            id={`step-indicator-${s}`}
+            class={`w-8 h-8 rounded-full flex items-center justify-center text-xs font-extrabold shrink-0 transition-all duration-300 border-2 ${
+              s === 1 ? 'bg-brand border-brand text-white' : 'bg-card border-edge text-muted'
+            }`}
+          >
+            {s}
+          </div>
+          {s < 3 && (
+            <div id={`step-line-${s}`} class="flex-1 h-0.5 bg-edge transition-all duration-300 mx-1"></div>
+          )}
+        </div>
+      ))}
+    </div>
+    <div class="flex justify-between px-5 pb-3 shrink-0">
+      <span class="text-[10px] font-bold text-subtle">Información</span>
+      <span class="text-[10px] font-bold text-subtle">Grupo & Horario</span>
+      <span class="text-[10px] font-bold text-subtle">Apariencia</span>
+    </div>
+
+    <!-- ── Cuerpo scrollable ── -->
+    <div class="overflow-y-auto flex-1 px-6 pb-4">
+
+      <!-- PASO 1: Información básica -->
+      <div id="step-1" class="flex flex-col gap-5">
+
+        <div class="flex flex-col gap-1.5">
+          <label for="course-name" class="text-xs font-bold text-heading uppercase tracking-wider">
+            Nombre del curso <span class="text-danger" aria-hidden="true">*</span>
+          </label>
+          <input
+            type="text"
+            id="course-name"
+            name="courseName"
+            placeholder="Ej: Inglés Intermedio B2"
+            maxlength="80"
+            required
+            class="w-full px-4 py-3 rounded-xl border border-edge bg-neutral-bg/30 text-sm text-heading font-medium placeholder:text-muted focus:outline-none focus:ring-2 focus:ring-brand focus:border-transparent transition"
+          />
+        </div>
+
+        <div class="flex flex-col gap-1.5">
+          <label for="course-code" class="text-xs font-bold text-heading uppercase tracking-wider">
+            Código del curso <span class="text-danger" aria-hidden="true">*</span>
+          </label>
+          <input
+            type="text"
+            id="course-code"
+            name="courseCode"
+            placeholder="Ej: IDIO.7122.226735.1350.R"
+            class="w-full px-4 py-3 rounded-xl border border-edge bg-neutral-bg/30 text-sm text-heading font-medium placeholder:text-muted focus:outline-none focus:ring-2 focus:ring-brand focus:border-transparent transition font-mono"
+          />
+        </div>
+
+        <div class="flex flex-col gap-1.5">
+          <label for="course-level" class="text-xs font-bold text-heading uppercase tracking-wider">
+            Nivel / Modalidad <span class="text-danger" aria-hidden="true">*</span>
+          </label>
+          <div class="relative">
+            <Icon name="lucide:layers" class="absolute left-3.5 top-1/2 -translate-y-1/2 w-4 h-4 text-muted pointer-events-none" aria-hidden="true" />
+            <select
+              id="course-level"
+              name="courseLevel"
+              required
+              class="w-full pl-10 pr-4 py-3 rounded-xl border border-edge bg-neutral-bg/30 text-sm text-heading font-medium focus:outline-none focus:ring-2 focus:ring-brand focus:border-transparent transition appearance-none"
+            >
+              <option value="" disabled selected>Seleccionar nivel...</option>
+              {levels.map((level) => (
+                <option value={level.code}>{level.name}</option>
+              ))}
+            </select>
+            <Icon name="lucide:chevron-down" class="absolute right-3.5 top-1/2 -translate-y-1/2 w-4 h-4 text-muted pointer-events-none" aria-hidden="true" />
+          </div>
+        </div>
+
+        <div class="flex flex-col gap-1.5">
+          <label for="course-description" class="text-xs font-bold text-heading uppercase tracking-wider">
+            Descripción / Objetivos
+          </label>
+          <textarea
+            id="course-description"
+            name="courseDescription"
+            rows={3}
+            placeholder="¿Qué aprenderán los estudiantes en este curso? Incluye objetivos, habilidades y énfasis especiales..."
+            class="w-full px-4 py-3 rounded-xl border border-edge bg-neutral-bg/30 text-sm text-heading font-medium placeholder:text-muted focus:outline-none focus:ring-2 focus:ring-brand focus:border-transparent transition resize-none"
+          ></textarea>
+        </div>
+
+      </div>
+
+      <!-- PASO 2: Grupo & Horario (oculto por defecto) -->
+      <div id="step-2" class="hidden flex-col gap-5">
+
+        <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
+          <div class="flex flex-col gap-1.5">
+            <label for="course-group" class="text-xs font-bold text-heading uppercase tracking-wider">
+              Número de grupo <span class="text-danger" aria-hidden="true">*</span>
+            </label>
+            <input
+              type="text"
+              id="course-group"
+              name="courseGroup"
+              placeholder="Ej: 226735.1350"
+              class="w-full px-4 py-3 rounded-xl border border-edge bg-neutral-bg/30 text-sm text-heading font-medium placeholder:text-muted focus:outline-none focus:ring-2 focus:ring-brand focus:border-transparent transition"
+            />
+          </div>
+          <div class="flex flex-col gap-1.5">
+            <label for="course-capacity" class="text-xs font-bold text-heading uppercase tracking-wider">
+              Cupo máximo
+            </label>
+            <input
+              type="number"
+              id="course-capacity"
+              name="courseCapacity"
+              min="1"
+              max="60"
+              placeholder="30"
+              class="w-full px-4 py-3 rounded-xl border border-edge bg-neutral-bg/30 text-sm text-heading font-medium placeholder:text-muted focus:outline-none focus:ring-2 focus:ring-brand focus:border-transparent transition"
+            />
+          </div>
+        </div>
+
+
+
+        <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
+          <div class="flex flex-col gap-1.5">
+            <label for="course-start-date" class="text-xs font-bold text-heading uppercase tracking-wider">
+              Fecha de inicio <span class="text-danger" aria-hidden="true">*</span>
+            </label>
+            <div class="relative">
+              <Icon name="lucide:calendar" class="absolute left-3.5 top-1/2 -translate-y-1/2 w-4 h-4 text-muted pointer-events-none" aria-hidden="true" />
+              <input
+                type="date"
+                id="course-start-date"
+                name="courseStartDate"
+                required
+                class="w-full pl-10 pr-4 py-3 rounded-xl border border-edge bg-neutral-bg/30 text-sm text-heading font-medium focus:outline-none focus:ring-2 focus:ring-brand focus:border-transparent transition"
+              />
+            </div>
+          </div>
+          <div class="flex flex-col gap-1.5">
+            <label for="course-end-date" class="text-xs font-bold text-heading uppercase tracking-wider">
+              Fecha de cierre
+            </label>
+            <div class="relative">
+              <Icon name="lucide:calendar" class="absolute left-3.5 top-1/2 -translate-y-1/2 w-4 h-4 text-muted pointer-events-none" aria-hidden="true" />
+              <input
+                type="date"
+                id="course-end-date"
+                name="courseEndDate"
+                class="w-full pl-10 pr-4 py-3 rounded-xl border border-edge bg-neutral-bg/30 text-sm text-heading font-medium focus:outline-none focus:ring-2 focus:ring-brand focus:border-transparent transition"
+              />
+            </div>
+          </div>
+        </div>
+
+        <div class="flex flex-col gap-2">
+          <label class="text-xs font-bold text-heading uppercase tracking-wider">
+            Horario de sesiones
+          </label>
+          <div class="flex flex-col gap-2">
+            {['Lunes', 'Martes', 'Miércoles', 'Jueves', 'Viernes', 'Sábado', 'Domingo'].map((day) => (
+              <div class="flex items-center gap-3 bg-neutral-bg/30 px-3 py-2.5 rounded-xl border border-edge">
+                <label class="flex items-center gap-2 w-28 cursor-pointer group">
+                  <input type="checkbox" name="days" value={day} class="w-4 h-4 rounded border-edge text-brand focus:ring-brand bg-card cursor-pointer day-checkbox" data-day={day} />
+                  <span class="text-sm font-semibold text-heading group-hover:text-brand transition-colors">{day}</span>
+                </label>
+                <div id={`time-${day}`} class="hidden flex items-center gap-2 flex-1">
+                  <input type="time" class="w-full px-3 py-1.5 rounded-lg border border-edge bg-card text-sm font-medium focus:outline-none focus:ring-2 focus:ring-brand transition" aria-label={`Hora inicio ${day}`} />
+                  <span class="text-subtle text-xs font-semibold">a</span>
+                  <input type="time" class="w-full px-3 py-1.5 rounded-lg border border-edge bg-card text-sm font-medium focus:outline-none focus:ring-2 focus:ring-brand transition" aria-label={`Hora fin ${day}`} />
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+
+        <div class="flex flex-col gap-2">
+          <label class="text-xs font-bold text-heading uppercase tracking-wider">Estado inicial</label>
+          <div class="flex items-center gap-3">
+            {[
+              { value: 'ABIERTO',      label: 'Abierto',      dot: 'bg-success' },
+              { value: 'EN_PROGRESO',  label: 'En progreso',  dot: 'bg-brand-dark' },
+              { value: 'CERRADO',      label: 'Cerrado',      dot: 'bg-neutral-subtle' },
+            ].map((opt, idx) => (
+              <label class="flex items-center gap-2 px-4 py-2.5 rounded-xl border-2 border-edge cursor-pointer hover:border-brand/30 hover:bg-brand-soft/20 transition-all has-[:checked]:border-brand has-[:checked]:bg-brand-soft">
+                <input type="radio" name="courseStatus" value={opt.value} class="sr-only" checked={idx === 0} />
+                <span class={`w-2 h-2 rounded-full ${opt.dot} flex-shrink-0`}></span>
+                <span class="text-xs font-bold text-subtle">{opt.label}</span>
+              </label>
+            ))}
+          </div>
+        </div>
+
+      </div>
+
+      <!-- PASO 3: Apariencia (oculto por defecto) -->
+      <div id="step-3" class="hidden flex-col gap-6">
+
+        <div class="flex flex-col gap-2">
+          <label class="text-xs font-bold text-heading uppercase tracking-wider">
+            Color del curso <span class="text-danger" aria-hidden="true">*</span>
+          </label>
+          <p class="text-xs text-subtle font-medium -mt-1">Define el gradiente que aparecerá en la tarjeta del curso.</p>
+          <div class="grid grid-cols-4 sm:grid-cols-5 gap-2" role="radiogroup" aria-label="Color del curso">
+            {[
+              { id: 'c1', label: 'Rojo Brand',    gradient: 'from-[#8B1A00] via-[#C0291A] to-[#E8402C]' },
+              { id: 'c2', label: 'Azul océano',   gradient: 'from-[#1A3A8B] via-[#1A5CBB] to-[#2C7EE8]' },
+              { id: 'c3', label: 'Verde esmeralda',gradient:'from-[#1A6B3A] via-[#22883A] to-[#2CB853]' },
+              { id: 'c4', label: 'Morado',        gradient: 'from-[#4A1A8B] via-[#6B2DBB] to-[#8B40E8]' },
+              { id: 'c5', label: 'Índigo',        gradient: 'from-[#1A2B8B] via-[#2944BB] to-[#3D64E8]' },
+              { id: 'c6', label: 'Naranja',       gradient: 'from-[#8B3D00] via-[#C05A00] to-[#E87C1A]' },
+              { id: 'c7', label: 'Rosa',          gradient: 'from-[#8B1A5A] via-[#C02880] to-[#E840A8]' },
+              { id: 'c8', label: 'Teal',          gradient: 'from-[#00607A] via-[#008BA8] to-[#00B8D4]' },
+              { id: 'c9', label: 'Oliva',         gradient: 'from-[#4A6B00] via-[#6B9600] to-[#8BBD00]' },
+              { id: 'c10',label: 'Burdeos',       gradient: 'from-[#6B0020] via-[#980030] to-[#C00040]' },
+            ].map((color, idx) => (
+              <label class="relative cursor-pointer group">
+                <input
+                  type="radio"
+                  name="courseColor"
+                  value={color.gradient}
+                  class="sr-only peer"
+                  checked={idx === 0}
+                  aria-label={color.label}
+                />
+                <div class={`w-full h-12 rounded-xl bg-gradient-to-r ${color.gradient} ring-2 ring-transparent peer-checked:ring-brand peer-checked:ring-offset-2 transition-all group-hover:ring-brand/40`}></div>
+                <div class="absolute inset-0 flex items-center justify-center opacity-0 peer-checked:opacity-100 transition-opacity">
+                  <Icon name="lucide:check" class="w-5 h-5 text-white drop-shadow" aria-hidden="true" />
+                </div>
+              </label>
+            ))}
+          </div>
+        </div>
+
+        <!-- Vista previa de la tarjeta -->
+        <div class="flex flex-col gap-2">
+          <p class="text-xs font-bold text-heading uppercase tracking-wider">Vista previa de tarjeta</p>
+          <div id="card-preview" class="rounded-2xl overflow-hidden border border-edge shadow-sm">
+            <div id="preview-banner" class="bg-gradient-to-r from-[#8B1A00] via-[#C0291A] to-[#E8402C] p-5 relative">
+              <div class="absolute inset-0 overflow-hidden" aria-hidden="true">
+                <div class="absolute -right-8 -top-8 w-40 h-40 rounded-full bg-white/10 blur-2xl"></div>
+              </div>
+              <div class="relative z-10">
+                <p id="preview-code" class="text-white/60 text-[10px] font-semibold tracking-widest uppercase mb-1">IDIO.0000.000000.0000.R</p>
+                <h3 id="preview-name" class="text-white font-extrabold text-lg leading-snug">Nombre del curso</h3>
+                <p id="preview-group" class="text-white/70 text-xs font-medium mt-0.5">Grupo · Modalidad</p>
+              </div>
+            </div>
+            <div class="bg-card px-5 py-4 flex items-center gap-4">
+              <div class="flex-1">
+                <p class="text-xs text-subtle font-semibold mb-1.5">Progreso del grupo</p>
+                <div class="h-1.5 bg-neutral-subtle rounded-full">
+                  <div class="h-full w-0 rounded-full bg-brand-dark"></div>
+                </div>
+              </div>
+              <span class="text-xs font-extrabold text-heading">0%</span>
+            </div>
+          </div>
+        </div>
+
+      </div>
+
+    </div>
+
+    <!-- ── Footer con botones de navegación ── -->
+    <div class="px-6 py-4 border-t border-edge-soft flex items-center justify-between bg-neutral-bg/20 shrink-0 gap-3">
+      <button
+        type="button"
+        id="step-back-btn"
+        class="hidden px-5 py-2.5 rounded-xl border border-edge text-sm font-bold text-subtle hover:bg-neutral-subtle hover:text-heading transition-colors"
+      >
+        ← Anterior
+      </button>
+      <div class="flex-1"></div>
+      <button
+        type="button"
+        id="cancel-new-course-btn"
+        class="px-5 py-2.5 rounded-xl border border-edge text-sm font-bold text-subtle hover:bg-neutral-subtle hover:text-heading transition-colors"
+      >
+        Cancelar
+      </button>
+      <button
+        type="button"
+        id="step-next-btn"
+        class="flex items-center gap-2 px-6 py-2.5 rounded-xl bg-brand text-white text-sm font-bold hover:bg-brand-dark transition-colors shadow-sm"
+      >
+        <span id="next-btn-label">Siguiente →</span>
+        <Icon name="lucide:loader-2" id="next-btn-spinner" class="w-4 h-4 animate-spin hidden" aria-hidden="true" />
+      </button>
+    </div>
+  </div>
+</div>
+
+<!-- Toast de éxito -->
+<div
+  id="course-success-toast"
+  class="fixed bottom-6 right-6 z-[60] flex items-center gap-3 bg-heading text-white px-5 py-4 rounded-2xl shadow-2xl translate-y-20 opacity-0 transition-all duration-500 pointer-events-none"
+  role="status"
+  aria-live="polite"
+>
+  <div class="w-8 h-8 rounded-full bg-success flex items-center justify-center flex-shrink-0">
+    <Icon name="lucide:check" class="w-4 h-4" aria-hidden="true" />
+  </div>
+  <div>
+    <p class="text-sm font-extrabold">¡Curso creado!</p>
+    <p class="text-xs text-white/70">Ya aparece en tu lista de cursos.</p>
+  </div>
+</div>
+
+<script>
+  // Auth manejada por middleware server-side (src/middleware.ts).
+
+  document.addEventListener('astro:page-load', () => {
+    // ── Abrir / Cerrar Modal ──────────────────────────────────────
+    const modal    = document.getElementById('new-course-modal');
+    const backdrop = document.getElementById('new-course-backdrop');
+    const panel    = document.getElementById('new-course-panel');
+
+    if (!modal || !backdrop || !panel) return;
+
+    let currentStep = 1;
+    const TOTAL_STEPS = 3;
+
+    const stepLabels: Record<number, string> = {
+      1: 'Paso 1 de 3 — Información básica',
+      2: 'Paso 2 de 3 — Grupo & Horario',
+      3: 'Paso 3 de 3 — Apariencia',
+    };
+
+    const renderStep = () => {
+      // Mostrar / ocultar secciones
+      for (let s = 1; s <= TOTAL_STEPS; s++) {
+        const el = document.getElementById(`step-${s}`);
+        if (!el) continue;
+        el.classList.toggle('hidden', s !== currentStep);
+        el.classList.toggle('flex', s === currentStep);
+      }
+
+      // Actualizar label
+      const stepLabel = document.getElementById('step-label');
+      if (stepLabel) stepLabel.textContent = stepLabels[currentStep];
+
+      // Indicadores numéricos
+      for (let s = 1; s <= TOTAL_STEPS; s++) {
+        const ind = document.getElementById(`step-indicator-${s}`);
+        if (!ind) continue;
+        ind.className = ind.className
+          .replace(/bg-\S+ border-\S+ text-\S+/g, '')
+          .trim();
+        if (s < currentStep) {
+          ind.classList.add('bg-brand', 'border-brand', 'text-white');
+          ind.innerHTML = `<svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"/></svg>`;
+        } else if (s === currentStep) {
+          ind.classList.add('bg-brand', 'border-brand', 'text-white');
+          ind.textContent = String(s);
+        } else {
+          ind.classList.add('bg-card', 'border-edge', 'text-muted');
+          ind.textContent = String(s);
+        }
+      }
+
+      // Líneas entre pasos
+      for (let s = 1; s < TOTAL_STEPS; s++) {
+        const line = document.getElementById(`step-line-${s}`);
+        if (line) line.classList.toggle('bg-brand', s < currentStep);
+      }
+
+      // Botón Anterior
+      const backBtn = document.getElementById('step-back-btn');
+      backBtn?.classList.toggle('hidden', currentStep === 1);
+
+      // Botón Siguiente / Publicar
+      const nextLabel = document.getElementById('next-btn-label');
+      if (nextLabel) {
+        nextLabel.textContent = currentStep === TOTAL_STEPS ? '✓ Crear Curso' : 'Siguiente →';
+      }
+    };
+
+    const openModal = () => {
+      currentStep = 1;
+      renderStep();
+      modal.classList.remove('opacity-0', 'pointer-events-none');
+      panel.classList.remove('translate-y-4', 'sm:scale-95');
+      document.body.style.overflow = 'hidden';
+    };
+
+    const closeModal = () => {
+      modal.classList.add('opacity-0', 'pointer-events-none');
+      panel.classList.add('translate-y-4', 'sm:scale-95');
+      document.body.style.overflow = '';
+    };
+
+    document.getElementById('new-course-btn')?.addEventListener('click', openModal);
+    document.getElementById('close-new-course-btn')?.addEventListener('click', closeModal);
+    document.getElementById('cancel-new-course-btn')?.addEventListener('click', closeModal);
+    backdrop.addEventListener('click', closeModal);
+    
+    // Solo registrar 1 vez por load
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape' && !modal.classList.contains('opacity-0')) closeModal();
+    };
+    document.addEventListener('keydown', handleKeyDown);
+
+    // ── Lógica de pasos ───────────────────────────────────────────
+
+    // Siguiente paso
+    document.getElementById('step-next-btn')?.addEventListener('click', () => {
+      if (currentStep < TOTAL_STEPS) {
+        // Validación paso 1
+        if (currentStep === 1) {
+          const name = (document.getElementById('course-name') as HTMLInputElement).value.trim();
+          const level = (document.getElementById('course-level') as HTMLSelectElement).value;
+          if (!name || !level) {
+            (document.getElementById('course-name') as HTMLInputElement).reportValidity();
+            (document.getElementById('course-level') as HTMLSelectElement).reportValidity();
+            return;
+          }
+        }
+        // Validación paso 2
+        if (currentStep === 2) {
+          const startDate = (document.getElementById('course-start-date') as HTMLInputElement).value;
+          if (!startDate) {
+            (document.getElementById('course-start-date') as HTMLInputElement).reportValidity();
+            return;
+          }
+        }
+        currentStep++;
+        renderStep();
+      } else {
+        // Último paso: crear curso
+        submitCourse();
+      }
+    });
+
+    // Paso anterior
+    document.getElementById('step-back-btn')?.addEventListener('click', () => {
+      if (currentStep > 1) { currentStep--; renderStep(); }
+    });
+
+    // ── Vista previa en tiempo real (Paso 3) ──────────────────────
+    const updatePreview = () => {
+      const name  = (document.getElementById('course-name') as HTMLInputElement)?.value || 'Nombre del curso';
+      const code  = (document.getElementById('course-code') as HTMLInputElement)?.value || 'IDIO.0000.000000.0000.R';
+      const group = (document.getElementById('course-group') as HTMLInputElement)?.value || 'Grupo';
+      const modality = 'Virtual';
+      const color = (document.querySelector<HTMLInputElement>('input[name="courseColor"]:checked'))?.value
+        ?? 'from-[#8B1A00] via-[#C0291A] to-[#E8402C]';
+
+      const banner = document.getElementById('preview-banner');
+      if (banner) banner.className = `bg-gradient-to-r ${color} p-5 relative`;
+
+      const pName  = document.getElementById('preview-name');
+      const pCode  = document.getElementById('preview-code');
+      const pGroup = document.getElementById('preview-group');
+      if (pName)  pName.textContent  = name;
+      if (pCode)  pCode.textContent  = code;
+      if (pGroup) pGroup.textContent = `${group} · ${modality}`;
+    };
+
+    // Escuchar cambios en los campos que afectan la preview
+    ['course-name', 'course-code', 'course-group'].forEach((id) => {
+      document.getElementById(id)?.addEventListener('input', updatePreview);
+    });
+    document.querySelectorAll('input[name="courseColor"]')
+      .forEach((el) => el.addEventListener('change', updatePreview));
+
+    // ── Lógica de Días/Horarios y Fechas ───────────────────────────
+    // Mostrar/ocultar inputs de hora según el checkbox del día
+    document.querySelectorAll('.day-checkbox').forEach((checkbox) => {
+      checkbox.addEventListener('change', (e) => {
+        const target = e.target as HTMLInputElement;
+        const day = target.getAttribute('data-day');
+        const timeContainer = document.getElementById(`time-${day}`);
+        if (timeContainer) {
+          timeContainer.classList.toggle('hidden', !target.checked);
+        }
+      });
+    });
+
+    // Validar que fecha de cierre sea posterior a fecha de inicio
+    const startDateInput = document.getElementById('course-start-date') as HTMLInputElement;
+    const endDateInput = document.getElementById('course-end-date') as HTMLInputElement;
+    if (startDateInput && endDateInput) {
+      startDateInput.addEventListener('change', () => {
+        endDateInput.min = startDateInput.value;
+        if (endDateInput.value && endDateInput.value < startDateInput.value) {
+          endDateInput.value = startDateInput.value;
+        }
+      });
+    }
+
+    // ── Envío final (Llamada real a la API) ──────────────────────
+    const submitCourse = async () => {
+      const nextBtn    = document.getElementById('step-next-btn')  as HTMLButtonElement;
+      const nextLabel  = document.getElementById('next-btn-label') as HTMLSpanElement;
+      const nextSpinner= document.getElementById('next-btn-spinner') as SVGSVGElement;
+      const toast      = document.getElementById('course-success-toast');
+
+      nextBtn.disabled = true;
+      nextLabel.classList.add('hidden');
+      nextSpinner.classList.remove('hidden');
+
+      // Recoger datos del curso
+      const courseName  = (document.getElementById('course-name') as HTMLInputElement).value.trim() || 'Nuevo Curso';
+      const courseCode  = (document.getElementById('course-code') as HTMLInputElement).value.trim() || 'IDIO.0000.000000.0000';
+      const courseLevel = (document.getElementById('course-level') as HTMLSelectElement).value;
+      const courseGroup = (document.getElementById('course-group') as HTMLInputElement)?.value.trim() || 'Grupo';
+      const courseCapacity = parseInt((document.getElementById('course-capacity') as HTMLInputElement)?.value) || 30;
+      const courseStatus = (document.querySelector<HTMLInputElement>('input[name="courseStatus"]:checked'))?.value || 'ABIERTO';
+      const selectedColor = document.querySelector<HTMLInputElement>('input[name="courseColor"]:checked')?.value
+        ?? 'from-[#8B1A00] via-[#C0291A] to-[#E8402C]';
+
+      // Obtener token (CORREGIDO DE auth_token A ka_session)
+      const tokenMatch = document.cookie.match(/(?:^|; )ka_session=([^;]*)/);
+      const token = tokenMatch ? tokenMatch[1] : null;
+
+      if (!token) {
+        if (toast) {
+          const toastMsg = toast.querySelector('p.text-sm');
+          if (toastMsg) toastMsg.textContent = 'No estás autenticado. Por favor, inicia sesión.';
+          toast.classList.remove('translate-y-20', 'opacity-0', 'pointer-events-none');
+          toast.classList.add('translate-y-0', 'opacity-100');
+          setTimeout(() => { toast.classList.add('translate-y-20','opacity-0','pointer-events-none'); toast.classList.remove('translate-y-0','opacity-100'); }, 3000);
+        }
+        nextBtn.disabled = false;
+        nextLabel.classList.remove('hidden');
+        nextSpinner.classList.add('hidden');
+        return;
+      }
+
+      try {
+        const response = await fetch('http://localhost:3000/api/v1/courses', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${token}`
+          },
+          body: JSON.stringify({
+            title: courseName,
+            code: courseCode,
+            level: courseLevel,
+            groupNumber: courseGroup,
+            maxStudents: courseCapacity,
+            modality: 'remoto', // Asignado por defecto, se podría añadir un select
+            status: courseStatus.toLowerCase(),
+            bannerGradient: selectedColor,
+          })
+        });
+
+        if (!response.ok) {
+          const errorData = await response.json();
+          throw new Error(errorData.message || 'Error al crear curso');
+        }
+
+        closeModal();
+        
+        // Mostrar toast
+        if (toast) {
+          const toastMsg = toast.querySelector('p.text-sm');
+          if (toastMsg) toastMsg.textContent = `¡"${courseName}" creado con éxito!`;
+          toast.classList.remove('translate-y-20', 'opacity-0', 'pointer-events-none');
+          toast.classList.add('translate-y-0', 'opacity-100');
+          setTimeout(() => {
+            toast.classList.add('translate-y-20', 'opacity-0', 'pointer-events-none');
+            toast.classList.remove('translate-y-0', 'opacity-100');
+            // Recargar la página para ver el nuevo curso y limpiar el form
+            window.location.reload();
+          }, 1500);
+        }
+
+      } catch (error: unknown) {
+        if (toast) {
+          const toastMsg = toast.querySelector('p.text-sm');
+          if (toastMsg) toastMsg.textContent = `Error: ${error instanceof Error ? error.message : String(error)}`;
+          toast.classList.remove('translate-y-20', 'opacity-0', 'pointer-events-none');
+          toast.classList.add('translate-y-0', 'opacity-100');
+          setTimeout(() => { toast.classList.add('translate-y-20','opacity-0','pointer-events-none'); toast.classList.remove('translate-y-0','opacity-100'); }, 3500);
+        }
+        nextBtn.disabled = false;
+        nextLabel.classList.remove('hidden');
+        nextSpinner.classList.add('hidden');
+      }
+    };
+    
+    // ── Lógica de Filtros de Curso ───────────────────────────
+    const filterBtns = document.querySelectorAll('.course-filter-btn');
+    const courseCards = document.querySelectorAll('.course-card');
+
+    filterBtns.forEach(btn => {
+      btn.addEventListener('click', () => {
+        // Reset styles
+        filterBtns.forEach(b => {
+          b.className = 'course-filter-btn px-4 py-2 rounded-xl text-sm font-semibold border transition-colors bg-card text-subtle border-edge hover:border-brand/30 hover:text-heading';
+        });
+        // Set active style
+        btn.className = 'course-filter-btn px-4 py-2 rounded-xl text-sm font-semibold border transition-colors bg-brand text-white border-brand';
+        
+        const filterVal = btn.getAttribute('data-filter');
+        
+        courseCards.forEach(card => {
+          if (filterVal === 'TODOS') {
+            (card as HTMLElement).style.display = '';
+          } else {
+            if (card.getAttribute('data-status') === filterVal) {
+              (card as HTMLElement).style.display = '';
+            } else {
+              (card as HTMLElement).style.display = 'none';
+            }
+          }
+        });
+      });
+    });
+  });
+</script>
+
+</TeacherDashboardLayout>

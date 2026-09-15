@@ -1,0 +1,942 @@
+---
+/**
+ * profesor/cursos/[courseId]/index.astro — Gestión de Contenido del Curso
+ * ─────────────────────────────────────────────────────────────────────────
+ * Vista del profesor para gestionar el contenido semanal del curso.
+ * Estructura: Banner hero + Tabs + [ Accordion de semanas | Stats sidebar ]
+ */
+import TeacherDashboardLayout from '../../../../layouts/TeacherDashboardLayout.astro';
+import ContentUploadPanel from '../../../../features/teacher/ContentUploadPanel.astro';
+import DeleteConfirmModal from '../../../../components/ui/DeleteConfirmModal.astro';
+import { Icon } from 'astro-icon/components';
+import { APP_ROUTES, TEACHER_ROUTES } from '../../../../core/config/paths';
+import { getCourseById, getCourseWeeksFull, getCourseStats } from '../../../../core/services/api';
+import type { ContentWeek, ContentItem } from '../../../../core/types/api.types';
+
+export const prerender = false;
+
+const { courseId } = Astro.params;
+const token = Astro.cookies.get('ka_session')?.value ?? '';
+
+if (!courseId) {
+  return Astro.redirect('/profesor');
+}
+
+let courseApi;
+let courseStatsApi;
+try {
+  courseApi = await getCourseById(token, courseId);
+  courseStatsApi = await getCourseStats(token, courseId).catch(() => ({ studentCount: 0, averageProgress: 0 }));
+} catch (error) {
+  return Astro.redirect('/profesor');
+}
+
+const course = {
+  id:              courseApi.id,
+  title:           courseApi.title,
+  subtitle:        courseApi.subtitle || '',
+  code:            courseApi.code,
+  status:          courseApi.status.toUpperCase(),
+  studentCount:    courseStatsApi.studentCount,
+  averageProgress: courseStatsApi.averageProgress,
+  pendingGrades:   0, // No API for this yet
+  bannerGradient:  courseApi.bannerGradient || 'from-[#8B1A00] via-[#C0291A] to-[#E8402C]',
+};
+
+const courseTabs = [
+  { label: 'Contenido',      icon: 'lucide:layout-list',  href: TEACHER_ROUTES.courseDetail(course.id),        active: true  },
+  { label: 'Calendario',     icon: 'lucide:calendar',     href: TEACHER_ROUTES.courseCalendar(course.id),      active: false },
+  { label: 'Alumnos',        icon: 'lucide:users',        href: TEACHER_ROUTES.courseStudents(course.id),      active: false },
+  { label: 'Anuncios',       icon: 'lucide:megaphone',    href: TEACHER_ROUTES.courseAnnouncements(course.id), active: false },
+  { label: 'Calificaciones', icon: 'lucide:book-marked',  href: TEACHER_ROUTES.courseGradebook(course.id),     active: false },
+];
+
+const weeksApi = await getCourseWeeksFull(token, courseId).catch(() => []);
+const courseWeeks = weeksApi.map((w: ContentWeek & { items?: ContentItem[] }) => {
+  const itemsApi = w.items || [];
+  return {
+    id: w.id,
+    weekNumber: w.weekNumber,
+    title: w.title,
+    isExpanded: true,
+    publishedItems: itemsApi.filter((i: ContentItem) => i.isPublished).length,
+    totalItems: itemsApi.length,
+    items: itemsApi.map((i: ContentItem) => ({
+      id: i.id,
+      type: i.type,
+      kind: ['tarea', 'quiz', 'evaluacion'].includes(i.type) ? 'actividad' : 'material',
+      title: i.title,
+      meta: i.description || (i.type === 'video' ? 'Video' : 'Recurso'),
+      isPublished: i.isPublished,
+      isVisible: i.isVisible,
+      dueDate: undefined, // Needs specific implementation or extended ContentItem model
+      maxScore: undefined
+    }))
+  };
+});
+
+
+const resourceTypeIconMap: Record<string, string> = {
+  video:      'lucide:video',
+  archivo:    'lucide:file-text',
+  tarea:      'lucide:clipboard-list',
+  evaluacion: 'lucide:star',
+  quiz:       'lucide:help-circle',
+  enlace:     'lucide:link',
+  pdf:        'lucide:file-text',
+  audio:      'lucide:headphones',
+  text:       'lucide:file-text',
+  imagen:     'lucide:image',
+};
+
+const kindColor = (item: { kind: string }) =>
+  item.kind === 'actividad'
+    ? (item.isVisible ? 'bg-warning-soft text-warning-dark' : 'bg-neutral-subtle text-muted')
+    : (item.isVisible ? 'bg-brand-soft text-brand-dark' : 'bg-neutral-subtle text-muted');
+---
+
+<TeacherDashboardLayout
+  pageTitle={`${course.title} — Contenido`}
+  breadcrumb="Detalle del Curso"
+  activeNav="cursos"
+>
+
+  <div class="-mx-6 lg:-mx-8 -mt-6 lg:-mt-8 flex flex-col" data-course-id={courseId}>
+
+    <!-- ░░ BANNER HERO ░░ -->
+    <div class={`relative w-full bg-gradient-to-r ${course.bannerGradient} overflow-hidden`}>
+      <div class="absolute inset-0 overflow-hidden pointer-events-none" aria-hidden="true">
+        <div class="absolute -right-16 -top-16 w-80 h-80 rounded-full bg-white/5 blur-3xl"></div>
+        <div class="absolute right-32 bottom-0 w-56 h-56 rounded-full bg-white/5 blur-2xl"></div>
+        <div class="absolute left-1/3 top-1/2 -translate-y-1/2 w-96 h-24 bg-white/[0.04] blur-2xl rotate-12"></div>
+      </div>
+
+      <div class="relative z-10 px-8 lg:px-12 pt-8 pb-6">
+        <p class="text-white/60 text-xs font-semibold tracking-widest uppercase mb-2">{course.code}</p>
+        <div class="flex flex-col sm:flex-row sm:items-end justify-between gap-4">
+          <div>
+            <h1 class="text-3xl sm:text-4xl font-extrabold text-white tracking-tight mb-1 drop-shadow-sm">
+              {course.title}
+            </h1>
+            <p class="text-white/70 text-sm font-medium">{course.subtitle}</p>
+          </div>
+          <div class="flex items-center gap-3 self-start sm:self-end shrink-0">
+            <span class="border border-white/40 text-white text-xs font-extrabold px-4 py-1.5 rounded-full tracking-widest">
+              {course.status}
+            </span>
+            
+          </div>
+        </div>
+
+        <!-- Métricas rápidas del curso en el banner -->
+        <div class="mt-5 flex items-center gap-6 flex-wrap">
+          <span class="flex items-center gap-2 text-white/80 text-xs font-semibold">
+            <Icon name="lucide:users" class="w-4 h-4" aria-hidden="true" />
+            {course.studentCount} alumnos
+          </span>
+          <span class="flex items-center gap-2 text-white/80 text-xs font-semibold">
+            <Icon name="lucide:trending-up" class="w-4 h-4" aria-hidden="true" />
+            {course.averageProgress}% progreso promedio
+          </span>
+          {course.pendingGrades > 0 && (
+            <span class="flex items-center gap-2 text-warning-soft text-xs font-bold">
+              <Icon name="lucide:inbox" class="w-4 h-4" aria-hidden="true" />
+              {course.pendingGrades} entregas por calificar
+            </span>
+          )}
+        </div>
+      </div>
+
+      <!-- Tabs de navegación -->
+      <nav aria-label="Secciones del curso" class="relative z-10 border-t border-white/10">
+        <div class="flex items-center overflow-x-auto px-6 lg:px-12">
+          {courseTabs.map(tab => (
+            <a
+              href={tab.href}
+              role="tab"
+              aria-selected={tab.active}
+              class={[
+                'flex items-center gap-2 px-4 py-4 text-sm font-semibold whitespace-nowrap border-b-[3px] transition-all shrink-0',
+                tab.active
+                  ? 'border-white text-white'
+                  : 'border-transparent text-white/60 hover:text-white/90 hover:border-white/30',
+              ].join(' ')}
+            >
+              <Icon name={tab.icon} class="w-4 h-4" aria-hidden="true" />
+              {tab.label}
+            </a>
+          ))}
+        </div>
+      </nav>
+    </div>
+
+    <!-- ░░ CUERPO PRINCIPAL ░░ -->
+    <div class="flex-1 bg-page px-6 lg:px-8 py-8">
+      <div class="max-w-[1200px] mx-auto grid grid-cols-1 lg:grid-cols-[1fr_280px] gap-8 items-start">
+
+        <!-- Columna Izquierda: Semanas / Accordion -->
+        <section aria-labelledby="content-manager-heading">
+          <div class="flex items-center justify-between mb-6">
+            <h2 id="content-manager-heading" class="text-xl font-extrabold text-heading">
+              Contenido del curso
+            </h2>
+            
+          </div>
+
+          <div class="flex flex-col gap-3" id="weeks-accordion">
+            {courseWeeks.map((week) => (
+              <article
+                class="bg-card rounded-2xl border border-edge overflow-hidden hover:shadow-sm transition-shadow"
+                data-week-id={week.id}
+              >
+                <!-- Cabecera de la semana -->
+                <div class="flex items-center gap-4 p-5 cursor-pointer group week-toggle">
+                  <div class="w-9 h-9 rounded-xl bg-brand-soft flex items-center justify-center shrink-0" aria-hidden="true">
+                    <span class="text-xs font-extrabold text-brand-dark">W{week.weekNumber}</span>
+                  </div>
+                  <div class="flex-1 min-w-0">
+                    <h3 class="text-sm font-bold text-heading">{week.title}</h3>
+                    <div class="flex items-center gap-3 mt-2">
+                      <div class="flex-1 max-w-[160px] h-1 bg-neutral-subtle rounded-full overflow-hidden">
+                        <div
+                          class={`h-full rounded-full ${week.publishedItems === week.totalItems ? 'bg-success' : 'bg-brand-dark'}`}
+                          style={`width: ${(week.publishedItems / week.totalItems) * 100}%`}
+                        ></div>
+                      </div>
+                      <span class="text-xs font-semibold text-subtle shrink-0">
+                        {week.publishedItems}/{week.totalItems} publicados
+                      </span>
+                    </div>
+                  </div>
+                  <div class="flex items-center gap-2 shrink-0">
+                    <button
+                      type="button"
+                      class="open-upload-week-btn p-1.5 rounded-lg hover:bg-brand-soft hover:text-brand-dark transition-colors text-subtle"
+                      data-week-title={week.title}
+                      aria-label={`Agregar recurso a ${week.title}`}
+                    >
+                      <Icon name="lucide:plus" class="w-4 h-4" aria-hidden="true" />
+                    </button>
+                    <Icon
+                      name={week.isExpanded ? 'lucide:chevron-up' : 'lucide:chevron-down'}
+                      class="w-5 h-5 text-subtle group-hover:text-heading transition-colors week-chevron"
+                      aria-hidden="true"
+                    />
+                  </div>
+                </div>
+
+                <!-- Items de la semana (expandible) -->
+                <div class={`border-t border-edge-soft ${week.isExpanded ? '' : 'hidden'} week-items`}>
+                  <ul class="divide-y divide-edge-soft">
+                    {week.items.map((item) => (
+                      <li
+                        class="flex items-center gap-3 px-5 py-3 hover:bg-neutral-bg/50 transition-colors group/item"
+                        data-item-id={item.id}
+                        data-visible={String(item.isVisible)}
+                      >
+                        <!-- Ícono de tipo -->
+                        <div class={`w-8 h-8 rounded-lg flex items-center justify-center shrink-0 ${kindColor(item)}`}>
+                          <Icon
+                            name={resourceTypeIconMap[item.type] ?? 'lucide:file'}
+                            class="w-4 h-4"
+                            aria-hidden="true"
+                          />
+                        </div>
+
+                        <!-- Info -->
+                        <div class="flex-1 min-w-0">
+                          <div class="flex items-center gap-2">
+                            <p class={`text-sm font-semibold truncate ${item.isVisible ? 'text-heading' : 'text-muted'}`}>
+                              {item.title}
+                            </p>
+                            {item.kind === 'actividad' && (
+                              <span class="text-[9px] font-extrabold bg-warning-soft text-warning-dark px-2 py-0.5 rounded-full uppercase tracking-wide shrink-0">
+                                Actividad
+                              </span>
+                            )}
+                          </div>
+                          <p class="text-xs text-subtle mt-0.5">
+                            {item.meta}
+                            {item.dueDate && (
+                              <> · <span class="font-semibold text-heading">{item.dueDate}</span></>
+                            )}
+                          </p>
+                        </div>
+
+                        <!-- Badge visibilidad -->
+                        <span
+                          class={`visibility-badge text-[10px] font-bold px-2.5 py-1 rounded-full shrink-0 transition-all ${
+                            item.isVisible
+                              ? 'bg-success-soft text-success-dark'
+                              : 'bg-neutral-subtle text-subtle'
+                          }`}
+                        >
+                          {item.isVisible ? 'Visible' : 'Oculto'}
+                        </span>
+
+                        <!-- Acciones hover -->
+                        <div class="flex items-center gap-1 opacity-0 group-hover/item:opacity-100 transition-opacity shrink-0">
+                          <!-- Abrir visor -->
+                          <a
+                            href={TEACHER_ROUTES.courseResource(course.id, item.id)}
+                            class="p-1.5 rounded-lg hover:bg-brand-soft hover:text-brand-dark transition-colors text-subtle"
+                            title="Ver recurso a pantalla completa"
+                            aria-label={`Ver ${item.title}`}
+                          >
+                            <Icon name="lucide:external-link" class="w-3.5 h-3.5" aria-hidden="true" />
+                          </a>
+                          <!-- Toggle visibilidad -->
+                          <button
+                            type="button"
+                            class="vis-toggle-btn p-1.5 rounded-lg hover:bg-neutral-subtle transition-colors text-subtle hover:text-heading"
+                            aria-label={item.isVisible ? `Ocultar ${item.title}` : `Mostrar ${item.title}`}
+                            title={item.isVisible ? 'Ocultar para alumnos' : 'Hacer visible'}
+                          >
+                            <Icon name={item.isVisible ? 'lucide:eye-off' : 'lucide:eye'} class="w-3.5 h-3.5" aria-hidden="true" />
+                          </button>
+                          <!-- Editar -->
+                          <button type="button" aria-label={`Editar ${item.title}`} class="edit-resource-btn p-1.5 rounded-lg hover:bg-brand-soft hover:text-brand-dark transition-colors text-subtle">
+                            <Icon name="lucide:pencil" class="w-3.5 h-3.5" aria-hidden="true" />
+                          </button>
+                          <!-- Eliminar -->
+                          <button type="button" aria-label={`Eliminar ${item.title}`} class="delete-resource-btn p-1.5 rounded-lg hover:bg-danger-soft hover:text-danger-dark transition-colors text-subtle">
+                            <Icon name="lucide:trash-2" class="w-3.5 h-3.5" aria-hidden="true" />
+                          </button>
+                        </div>
+                      </li>
+                    ))}
+                  </ul>
+                  <!-- Botón agregar al final de la semana -->
+                  <div class="px-5 py-3 border-t border-edge-soft">
+                    <button
+                      type="button"
+                      class="open-upload-week-btn flex items-center gap-2 text-xs font-bold text-brand-dark hover:text-brand transition-colors"
+                      data-week-title={week.title}
+                    >
+                      <Icon name="lucide:plus-circle" class="w-3.5 h-3.5" aria-hidden="true" />
+                      Agregar recurso a esta semana
+                    </button>
+                  </div>
+                </div>
+              </article>
+            ))}
+          </div>
+
+          <!-- Agregar nueva semana -->
+          <button
+            type="button"
+            id="open-new-week-modal-btn"
+            class="mt-4 w-full flex items-center justify-center gap-2 py-4 rounded-2xl border-2 border-dashed border-edge hover:border-brand/30 hover:bg-brand-soft/10 text-sm font-bold text-subtle hover:text-brand-dark transition-all"
+          >
+            <Icon name="lucide:plus" class="w-4 h-4" aria-hidden="true" />
+            Agregar nueva semana
+          </button>
+        </section>
+
+        <!-- Columna Derecha: Estadísticas del Curso -->
+        <aside class="flex flex-col gap-5">
+
+          <!-- Stats del curso -->
+          <section class="bg-card rounded-2xl border border-edge p-6" aria-labelledby="course-stats-heading">
+            <h2 id="course-stats-heading" class="text-sm font-extrabold text-heading uppercase tracking-wider mb-5">
+              Estadísticas del curso
+            </h2>
+            <ul class="flex flex-col gap-4">
+              {[
+                { icon: 'lucide:users',          label: 'Alumnos inscritos',    value: String(course.studentCount) },
+                { icon: 'lucide:inbox',          label: 'Entregas pendientes',  value: String(course.pendingGrades) },
+                { icon: 'lucide:layout-list',    label: 'Semanas de contenido', value: String(courseWeeks.length)   },
+              ].map((stat) => (
+                <li class="flex items-center gap-3">
+                  <div class="w-8 h-8 rounded-lg bg-neutral-subtle flex items-center justify-center shrink-0">
+                    <Icon name={stat.icon} class="w-4 h-4 text-subtle" aria-hidden="true" />
+                  </div>
+                  <div class="flex-1 min-w-0">
+                    <p class="text-xs text-subtle font-medium">{stat.label}</p>
+                    <p class="text-sm font-extrabold text-heading">{stat.value}</p>
+                  </div>
+                </li>
+              ))}
+            </ul>
+          </section>
+
+          <!-- Acciones rápidas -->
+          <section class="bg-card rounded-2xl border border-edge p-6" aria-labelledby="quick-actions-heading">
+            <h2 id="quick-actions-heading" class="text-sm font-extrabold text-heading uppercase tracking-wider mb-4">
+              Acciones rápidas
+            </h2>
+            <ul class="flex flex-col gap-2">
+              {[
+                { icon: 'lucide:users',      label: 'Ver alumnos',   href: TEACHER_ROUTES.courseStudents(course.id) },
+                { icon: 'lucide:megaphone',  label: 'Ver anuncios',  href: TEACHER_ROUTES.courseAnnouncements(course.id) },
+                { icon: 'lucide:star',       label: 'Calificaciones',href: TEACHER_ROUTES.grades },
+              ].map((action) => (
+                <li>
+                  <a
+                    href={action.href}
+                    class="flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm font-semibold text-subtle hover:bg-brand-soft/40 hover:text-brand-dark transition-colors"
+                  >
+                    <Icon name={action.icon} class="w-4 h-4 flex-shrink-0" aria-hidden="true" />
+                    {action.label}
+                  </a>
+                </li>
+              ))}
+            </ul>
+          </section>
+
+        </aside>
+      </div>
+    </div>
+  </div>
+
+  <!-- Modal de Nueva Semana -->
+  <div
+    id="new-week-modal"
+    class="fixed inset-0 z-50 flex items-center justify-center opacity-0 pointer-events-none transition-opacity duration-300"
+    role="dialog"
+    aria-modal="true"
+    aria-labelledby="new-week-modal-title"
+  >
+    <div id="new-week-backdrop" class="absolute inset-0 bg-black/50 backdrop-blur-sm cursor-pointer"></div>
+    <div
+      id="new-week-panel"
+      class="relative bg-card w-[90%] max-w-lg rounded-3xl shadow-2xl flex flex-col overflow-hidden transform scale-95 transition-transform duration-300 border border-edge"
+    >
+      <div class="px-6 py-5 border-b border-edge-soft flex items-center justify-between bg-neutral-bg/30 shrink-0">
+        <div class="flex items-center gap-3">
+          <div class="w-10 h-10 rounded-full bg-brand-soft flex items-center justify-center shrink-0">
+            <Icon name="lucide:folder-plus" class="w-5 h-5 text-brand-dark" aria-hidden="true" />
+          </div>
+          <h2 id="new-week-modal-title" class="text-lg font-extrabold text-heading">Nueva Semana</h2>
+        </div>
+        <button id="close-new-week-modal-btn" type="button" class="p-2 rounded-full hover:bg-neutral-subtle text-subtle hover:text-heading transition-colors" aria-label="Cerrar">
+          <Icon name="lucide:x" class="w-5 h-5" aria-hidden="true" />
+        </button>
+      </div>
+      <div class="p-6">
+        <form id="new-week-form" class="flex flex-col gap-5" novalidate>
+          <div class="flex flex-col gap-1.5">
+            <label for="week-title-input" class="text-xs font-bold text-heading uppercase tracking-wider">
+              Título de la semana <span class="text-danger" aria-hidden="true">*</span>
+            </label>
+            <input
+              type="text"
+              id="week-title-input"
+              name="weekTitle"
+              placeholder="Ej: Conditional Sentences"
+              required
+              class="w-full px-4 py-3 rounded-xl border border-edge bg-neutral-bg/30 text-sm text-heading font-medium placeholder:text-muted focus:outline-none focus:ring-2 focus:ring-brand focus:border-transparent transition"
+            />
+          </div>
+
+          <p class="text-xs text-subtle font-medium">
+            La nueva semana se creará vacía. Luego podrás agregar recursos con el botón <span class="font-bold text-heading">+</span> de cada semana.
+          </p>
+        </form>
+      </div>
+      <div class="px-6 py-4 border-t border-edge-soft flex items-center justify-end gap-3 bg-neutral-bg/20 shrink-0">
+        <button type="button" id="cancel-new-week-btn" class="px-5 py-2.5 rounded-xl border border-edge text-sm font-bold text-subtle hover:bg-neutral-subtle hover:text-heading transition-colors">
+          Cancelar
+        </button>
+        <button type="button" id="create-week-btn" class="flex items-center gap-2 px-6 py-2.5 rounded-xl bg-brand text-white text-sm font-bold hover:bg-brand-dark transition-colors shadow-sm">
+          <span id="create-week-label">Crear Semana</span>
+          <svg id="create-week-spinner" xmlns="http://www.w3.org/2000/svg" class="w-4 h-4 animate-spin hidden" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 12a9 9 0 1 1-6.219-8.56"/></svg>
+        </button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Modal de carga de contenido (por semana) -->
+  <ContentUploadPanel />
+
+  <!-- Modal de Confirmación de Eliminación Global -->
+  <DeleteConfirmModal modalId="delete-confirm-modal" />
+
+
+<script>
+  import { createCourseWeek, createWeekItem, updateWeekItemVisibility, deleteWeekItem, updateWeekItem } from '../../../../core/services/courses.service';
+
+  // State
+  let currentWeekArticle: HTMLElement | null = null;
+  let isEventsBound = false;
+
+  document.addEventListener('astro:page-load', () => {
+    const tokenMatch = document.cookie.match(/(?:^|; )ka_session=([^;]*)/);
+    const token = tokenMatch ? tokenMatch[1] : '';
+    const courseId = document.querySelector('[data-course-id]')?.getAttribute('data-course-id') ?? '';
+
+    // Re-query elements every time the page loads (View Transitions replaces DOM)
+    const newWeekModal    = document.getElementById('new-week-modal');
+    const newWeekBackdrop = document.getElementById('new-week-backdrop');
+    const newWeekPanel    = document.getElementById('new-week-panel');
+    const closeNewWeekBtn = document.getElementById('close-new-week-modal-btn');
+    const cancelNewWeekBtn= document.getElementById('cancel-new-week-btn');
+    const openNewWeekBtn  = document.getElementById('open-new-week-modal-btn');
+    const createWeekBtn   = document.getElementById('create-week-btn');
+    const weekTitleInput  = document.getElementById('week-title-input') as HTMLInputElement;
+
+    const uploadModal       = document.getElementById('content-upload-modal');
+    const uploadBackdrop    = document.getElementById('upload-modal-backdrop');
+    const uploadPanel       = document.getElementById('upload-modal-panel');
+    const closeUploadBtn    = document.getElementById('close-upload-modal-btn');
+    const cancelUploadBtn   = document.getElementById('cancel-upload-btn');
+    const modalSectionLabel = document.getElementById('upload-modal-section');
+
+    // Accordion
+    document.querySelectorAll('.week-toggle').forEach((header) => {
+      // Remove old listener to avoid duplicates if re-attached
+      const newHeader = header.cloneNode(true);
+      header.parentNode?.replaceChild(newHeader, header);
+      
+      newHeader.addEventListener('click', (e) => {
+        if ((e.target as Element).closest('.open-upload-week-btn')) return;
+        const article = newHeader.closest('article');
+        if (!article) return;
+        const itemsPanel = article.querySelector('.week-items');
+        if (!itemsPanel) return;
+        itemsPanel.classList.toggle('hidden');
+      });
+    });
+
+    // Modals helper functions
+    const openNewWeekModal = () => {
+      if(!newWeekModal || !newWeekPanel) return;
+      newWeekModal.classList.remove('opacity-0', 'pointer-events-none');
+      newWeekPanel.classList.remove('translate-y-4', 'sm:scale-95');
+      document.body.style.overflow = 'hidden';
+      weekTitleInput?.focus();
+    };
+
+    const closeNewWeekModal = () => {
+      if(!newWeekModal || !newWeekPanel) return;
+      newWeekModal.classList.add('opacity-0', 'pointer-events-none');
+      newWeekPanel.classList.add('translate-y-4', 'sm:scale-95');
+      document.body.style.overflow = '';
+      if(weekTitleInput) weekTitleInput.value = '';
+    };
+
+    const openUploadModal = (sectionTitle?: string, weekArticle?: HTMLElement) => {
+      if (!uploadModal || !uploadPanel || !modalSectionLabel) return;
+      if (sectionTitle) modalSectionLabel.textContent = sectionTitle;
+      if (weekArticle !== undefined) currentWeekArticle = weekArticle;
+      uploadModal.classList.remove('opacity-0', 'pointer-events-none');
+      uploadPanel.classList.remove('translate-y-4', 'sm:scale-95');
+      document.body.style.overflow = 'hidden';
+    };
+
+    const closeUploadModal = () => {
+      if (!uploadModal || !uploadPanel) return;
+      uploadModal.classList.add('opacity-0', 'pointer-events-none');
+      uploadPanel.classList.add('translate-y-4', 'sm:scale-95');
+      document.body.style.overflow = '';
+      currentWeekArticle = null;
+    };
+
+    (window as any).__closeUploadModal = closeUploadModal;
+
+    // Toast helper
+    function showWeekToast(msg: string, isError: boolean = false) {
+      const existing = document.getElementById('week-toast');
+      if(existing) existing.remove();
+      const toast = document.createElement('div');
+      toast.id = 'week-toast';
+      const bgClass = isError ? 'bg-danger text-white' : 'bg-heading text-white';
+      const iconHtml = isError 
+        ? '<svg xmlns="http://www.w3.org/2000/svg" class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>'
+        : '<svg xmlns="http://www.w3.org/2000/svg" class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg>';
+      const iconBg = isError ? 'bg-white/20' : 'bg-success';
+      
+      toast.className = `fixed bottom-6 right-6 z-[60] flex items-center gap-3 px-5 py-3.5 rounded-2xl shadow-2xl transition-all duration-500 ${bgClass}`;
+      toast.style.cssText = 'opacity:0; transform:translateY(20px)';
+      toast.innerHTML = `<div class="w-7 h-7 rounded-full ${iconBg} flex items-center justify-center shrink-0">${iconHtml}</div><p class="text-sm font-bold">${msg}</p>`;
+      document.body.appendChild(toast);
+      requestAnimationFrame(() => { toast.style.opacity='1'; toast.style.transform='translateY(0)'; });
+      setTimeout(() => { toast.style.opacity='0'; toast.style.transform='translateY(20px)'; setTimeout(()=>toast.remove(),500); }, 3000);
+    }
+
+    // Direct Element Listeners (Re-bound every page load)
+    openNewWeekBtn?.addEventListener('click', openNewWeekModal);
+    closeNewWeekBtn?.addEventListener('click', closeNewWeekModal);
+    cancelNewWeekBtn?.addEventListener('click', closeNewWeekModal);
+    newWeekBackdrop?.addEventListener('click', closeNewWeekModal);
+
+    closeUploadBtn?.addEventListener('click', closeUploadModal);
+    cancelUploadBtn?.addEventListener('click', closeUploadModal);
+    uploadBackdrop?.addEventListener('click', closeUploadModal);
+
+    createWeekBtn?.addEventListener('click', () => {
+      const title = weekTitleInput?.value.trim();
+      if(!title) {
+        showWeekToast('El título no puede estar vacío', true);
+        return;
+      }
+      createWeekBtn.setAttribute('disabled', 'true');
+      const lbl = createWeekBtn.querySelector('span');
+      const spin = createWeekBtn.querySelector('svg');
+      if(lbl) lbl.classList.add('hidden');
+      if(spin) spin.classList.remove('hidden');
+
+      setTimeout(async () => {
+        try {
+          const newWeek = await createCourseWeek(token, courseId, title);
+          const currentCount = document.querySelectorAll('article[data-week-id]').length;
+          const fullTitle = newWeek.title;
+          
+          const weeksContainer = document.getElementById('weeks-container');
+          if (!weeksContainer) return;
+
+          const emptyState = document.getElementById('empty-state');
+          if (emptyState) emptyState.remove();
+
+          const article = document.createElement('article');
+          article.className = 'bg-card rounded-2xl border border-edge shadow-sm overflow-hidden flex flex-col transition-all';
+          article.setAttribute('data-week-id', newWeek.id);
+          article.innerHTML = `
+            <!-- Encabezado de la Semana -->
+            <button
+              type="button"
+              class="week-toggle flex items-center justify-between w-full px-5 py-4 bg-neutral-bg/30 hover:bg-neutral-bg/60 transition-colors text-left"
+              aria-expanded="true"
+            >
+              <div class="flex items-center gap-4">
+                <div class="flex items-center justify-center w-8 h-8 rounded-full bg-brand-soft text-brand-dark">
+                  <svg xmlns="http://www.w3.org/2000/svg" class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="18" rx="2" ry="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg>
+                </div>
+                <div>
+                  <h3 class="text-sm font-extrabold text-heading tracking-wide">${fullTitle}</h3>
+                  <p class="text-xs text-subtle font-medium mt-0.5">0 recursos</p>
+                </div>
+              </div>
+              <div class="flex items-center gap-3">
+                <div class="open-upload-week-btn p-1.5 rounded-lg hover:bg-brand-soft hover:text-brand-dark transition-colors text-subtle" data-week-title="${fullTitle}">
+                  <svg xmlns="http://www.w3.org/2000/svg" class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="16"/><line x1="8" y1="12" x2="16" y2="12"/></svg>
+                </div>
+                <div class="p-1.5 rounded-lg text-subtle hover:bg-neutral-subtle transition-colors">
+                  <svg xmlns="http://www.w3.org/2000/svg" class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"/></svg>
+                </div>
+              </div>
+            </button>
+            <!-- Contenido -->
+            <div class="week-items">
+              <ul class="divide-y divide-edge-soft empty:hidden"></ul>
+              <div class="px-5 py-3 border-t border-edge-soft">
+                <button
+                  type="button"
+                  class="open-upload-week-btn flex items-center gap-2 text-xs font-bold text-brand-dark hover:text-brand transition-colors"
+                  data-week-title="${fullTitle}"
+                >
+                  <svg xmlns="http://www.w3.org/2000/svg" class="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="16"/><line x1="8" y1="12" x2="16" y2="12"/></svg>
+                  Agregar recurso a esta semana
+                </button>
+              </div>
+            </div>
+          `;
+          weeksContainer.appendChild(article);
+
+          // Bind event to toggle
+          article.querySelector('.week-toggle')?.addEventListener('click', (e) => {
+            if ((e.target as Element).closest('.open-upload-week-btn')) return;
+            const panel = article.querySelector('.week-items');
+            panel?.classList.toggle('hidden');
+          });
+
+          // Bind botones de subir recurso en la nueva semana
+          article.querySelectorAll('.open-upload-week-btn').forEach((btn) => {
+            btn.addEventListener('click', (e) => {
+              e.stopPropagation();
+              const wt = btn.getAttribute('data-week-title') ?? 'Semana';
+              openUploadModal(wt, article);
+            });
+          });
+
+          // Cleanup
+          weekTitleInput.value = '';
+          createWeekBtn.removeAttribute('disabled');
+          if(lbl) lbl.classList.remove('hidden'); 
+          if(spin) spin.classList.add('hidden');
+          closeNewWeekModal();
+
+          showWeekToast(`Semana "${fullTitle}" creada exitosamente`);
+        } catch(err) {
+          console.error(err);
+          showWeekToast('Error al crear la semana. Por favor, inténtelo de nuevo.', true);
+          createWeekBtn.removeAttribute('disabled');
+          if(lbl) lbl.classList.remove('hidden'); 
+          if(spin) spin.classList.add('hidden');
+        }
+      }, 600);
+    });
+
+    // Re-bind all dynamic .open-upload-week-btn
+    document.querySelectorAll<HTMLButtonElement>('.open-upload-week-btn').forEach(btn => {
+      btn.addEventListener('click', () => {
+        const title = btn.getAttribute('data-week-title');
+        if (title && modalSectionLabel) {
+          modalSectionLabel.textContent = `En: ${title}`;
+          currentWeekArticle = btn.closest('article');
+        }
+        
+        // Reset modal to "Crear"
+        const modalTitle = document.getElementById('upload-modal-title');
+        if (modalTitle) modalTitle.textContent = 'Agregar Contenido';
+        const saveBtnLabel = document.getElementById('save-upload-label');
+        if (saveBtnLabel) saveBtnLabel.textContent = 'Publicar ahora';
+        const titleInputs = document.querySelectorAll('input[name="materialTitle"], input[name="activityTitle"]');
+        titleInputs.forEach((i: Element) => (i as HTMLInputElement).value = '');
+
+        openUploadModal();
+      });
+    });
+
+    // --- Only bind DOCUMENT level listeners ONCE ---
+    if (!isEventsBound) {
+      isEventsBound = true;
+
+      document.addEventListener('contentAdded', async (e: Event) => {
+        const { isActivity, title, type, visible, fileUrl, description, dueDate, maxScore } = (e as CustomEvent).detail;
+        if (!currentWeekArticle) return;
+        const weekId = currentWeekArticle.getAttribute('data-week-id');
+        if (!weekId) return;
+
+        const targetUl = currentWeekArticle.querySelector<HTMLUListElement>('ul.divide-y');
+
+        try {
+          const itemResponse = await createWeekItem(token, courseId, weekId, {
+            title, type, url: fileUrl, isVisible: visible, meta: description,
+            dueDate, maxScore
+          });
+
+          const iconMap: Record<string, string> = { video:'▶', archivo:'📄', enlace:'🔗', tarea:'📋', evaluacion:'⭐', quiz:'❓' };
+          const kindLabel = isActivity ? 'Actividad' : '';
+          const badgeClass = itemResponse.isVisible ? 'bg-success-soft text-success-dark' : 'bg-neutral-subtle text-subtle';
+          const iconBgClass = isActivity
+            ? (itemResponse.isVisible ? 'bg-warning-soft text-warning-dark' : 'bg-neutral-subtle text-muted')
+            : (itemResponse.isVisible ? 'bg-brand-soft text-brand-dark' : 'bg-neutral-subtle text-muted');
+          const svgByType: Record<string,string> = {
+            video:      '<path d="m22 8-6 4 6 4V8Z"/><rect x="2" y="6" width="14" height="12" rx="2"/>',
+            archivo:    '<path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/>',
+            enlace:     '<path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"/><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"/>',
+            tarea:      '<path d="M9 11l3 3L22 4"/><path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"/>',
+            evaluacion: '<polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"/>',
+            quiz:       '<circle cx="12" cy="12" r="10"/><path d="M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3"/><line x1="12" y1="17" x2="12.01" y2="17"/>',
+            imagen:     '<rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="8.5" cy="8.5" r="1.5"/><path d="m21 15-5-5L5 21"/>',
+            audio:      '<path d="M9 18V5l12-2v13"/><circle cx="6" cy="18" r="3"/><circle cx="18" cy="16" r="3"/>',
+          };
+          const svgPath = svgByType[type] ?? svgByType['archivo'];
+
+          const li = document.createElement('li');
+          li.className = 'flex items-center gap-3 px-5 py-3 hover:bg-neutral-bg/50 transition-colors group/item';
+          li.setAttribute('data-visible', String(itemResponse.isVisible));
+          li.setAttribute('data-item-id', itemResponse.id);
+          li.setAttribute('data-url', itemResponse.url ?? '');
+          li.style.opacity = '0'; li.style.transform = 'translateX(-10px)';
+          li.style.transition = 'opacity 0.3s, transform 0.3s';
+          
+          li.innerHTML = `
+            <div class="flex items-center justify-center w-8 h-8 rounded-lg ${iconBgClass} shrink-0 item-icon-wrapper">
+              <svg xmlns="http://www.w3.org/2000/svg" class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">${svgPath}</svg>
+            </div>
+            <div class="flex-1 min-w-0">
+              <div class="flex items-center gap-2">
+                <a href="/profesor/cursos/${courseId}/recurso/${itemResponse.id}" class="text-sm font-bold text-heading hover:text-brand hover:underline truncate transition-colors item-title-link">
+                  ${itemResponse.title}
+                </a>
+                <span class="text-[10px] font-bold px-2 py-0.5 rounded-full ${badgeClass} visibility-badge uppercase tracking-wide">
+                  ${itemResponse.isVisible ? 'Visible' : 'Oculto'}
+                </span>
+                ${isActivity ? `<span class="text-[10px] uppercase font-bold text-brand bg-brand-soft px-1.5 py-0.5 rounded-md">${kindLabel}</span>` : ''}
+              </div>
+            </div>
+            <div class="flex items-center gap-1 opacity-0 group-hover/item:opacity-100 transition-opacity">
+              <button type="button" class="toggle-visibility-btn p-1.5 rounded-lg hover:bg-neutral-subtle transition-colors text-subtle hover:text-heading" aria-label="Visibilidad" title="${itemResponse.isVisible ? 'Ocultar' : 'Mostrar'}">
+                <svg xmlns="http://www.w3.org/2000/svg" class="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                  <path d="M2 12s3-7 10-7 10 7 10 7-3 7-10 7-10-7-10-7Z"/>
+                  <circle cx="12" cy="12" r="3"/>
+                  ${!itemResponse.isVisible ? '<line x1="2" y1="2" x2="22" y2="22"/>' : ''}
+                </svg>
+              </button>
+              <button type="button" class="edit-resource-btn p-1.5 rounded-lg hover:bg-neutral-subtle transition-colors text-subtle hover:text-heading" aria-label="Editar" title="Editar recurso">
+                <svg xmlns="http://www.w3.org/2000/svg" class="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17 3a2.85 2.83 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5Z"/><path d="m15 5 4 4"/></svg>
+              </button>
+              <button type="button" class="delete-resource-btn p-1.5 rounded-lg hover:bg-danger-soft hover:text-danger-dark transition-colors text-subtle" aria-label="Eliminar" title="Eliminar recurso">
+                <svg xmlns="http://www.w3.org/2000/svg" class="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 6h18"/><path d="M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6"/><path d="M8 6V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2"/><line x1="10" y1="11" x2="10" y2="17"/><line x1="14" y1="11" x2="14" y2="17"/></svg>
+              </button>
+            </div>
+          `;
+
+          if (targetUl) {
+            targetUl.appendChild(li);
+            requestAnimationFrame(() => {
+              li.style.opacity = '1';
+              li.style.transform = 'translateX(0)';
+            });
+            showWeekToast(`Recurso guardado exitosamente`);
+          }
+          if ((window as any).__closeUploadModal) (window as any).__closeUploadModal();
+
+        } catch (err) {
+          console.error(err);
+          showWeekToast('Error al guardar el recurso. Intente nuevamente.', true);
+        }
+      });
+
+      document.addEventListener('contentUpdated', async (e: Event) => {
+        const { itemId, isActivity, title, type, visible, fileUrl, description, weekId } = (e as CustomEvent).detail;
+        try {
+          const itemResponse = await updateWeekItem(token, courseId, weekId, itemId, {
+            title, type, url: fileUrl, isVisible: visible, meta: description,
+          });
+          const itemRow = document.querySelector(`li[data-item-id="${itemId}"]`) as HTMLElement;
+          if (itemRow) {
+            itemRow.setAttribute('data-visible', String(visible));
+            itemRow.setAttribute('data-url', itemResponse.url ?? '');
+            const titleEl = itemRow.querySelector('.item-title-link');
+            if (titleEl) titleEl.textContent = title;
+            const badge = itemRow.querySelector('.visibility-badge');
+            if (badge) {
+              badge.textContent = visible ? 'Visible' : 'Oculto';
+              badge.className = `text-[10px] font-bold px-2 py-0.5 rounded-full uppercase tracking-wide visibility-badge ${visible ? 'bg-success-soft text-success-dark' : 'bg-neutral-subtle text-subtle'}`;
+            }
+            const iconWrapper = itemRow.querySelector('.item-icon-wrapper');
+            if (iconWrapper) {
+              iconWrapper.className = `flex items-center justify-center w-8 h-8 rounded-lg shrink-0 item-icon-wrapper ${
+                isActivity 
+                  ? (visible ? 'bg-warning-soft text-warning-dark' : 'bg-neutral-subtle text-muted')
+                  : (visible ? 'bg-brand-soft text-brand-dark' : 'bg-neutral-subtle text-muted')
+              }`;
+            }
+          }
+          showWeekToast(`Recurso editado exitosamente`);
+          if ((window as any).__closeUploadModal) (window as any).__closeUploadModal();
+        } catch(err) {
+          console.error(err);
+          showWeekToast('Error al guardar cambios.', true);
+        }
+      });
+
+      // Visibilidad, Editar, Eliminar - Listeners Globales por Delegación
+      document.addEventListener('click', async (e) => {
+        const target = e.target as HTMLElement;
+
+        // Toggle visibility
+        const toggleBtn = target.closest('.toggle-visibility-btn');
+        if (toggleBtn) {
+          e.preventDefault(); e.stopPropagation();
+          const li = toggleBtn.closest('li');
+          const weekArticle = toggleBtn.closest('article');
+          if (!li || !weekArticle) return;
+          const weekId = weekArticle.getAttribute('data-week-id');
+          const itemId = li.getAttribute('data-item-id');
+          const currentVisible = li.getAttribute('data-visible') === 'true';
+          const newVisible = !currentVisible;
+          if (!weekId || !itemId) return;
+
+          const originalHtml = toggleBtn.innerHTML;
+          toggleBtn.innerHTML = '<svg class="animate-spin w-3.5 h-3.5 text-brand" ... viewBox="0 0 24 24"><circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4" fill="none"></circle><path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8H4z"></path></svg>';
+          
+          try {
+            await updateWeekItemVisibility(token, courseId, weekId, itemId, newVisible);
+            li.setAttribute('data-visible', String(newVisible));
+            toggleBtn.setAttribute('title', newVisible ? 'Ocultar' : 'Mostrar');
+            toggleBtn.innerHTML = `
+              <svg xmlns="http://www.w3.org/2000/svg" class="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <path d="M2 12s3-7 10-7 10 7 10 7-3 7-10 7-10-7-10-7Z"/>
+                <circle cx="12" cy="12" r="3"/>
+                ${!newVisible ? '<line x1="2" y1="2" x2="22" y2="22"/>' : ''}
+              </svg>
+            `;
+            const badge = li.querySelector('.visibility-badge');
+            if (badge) {
+              badge.textContent = newVisible ? 'Visible' : 'Oculto';
+              badge.className = `text-[10px] font-bold px-2 py-0.5 rounded-full uppercase tracking-wide visibility-badge ${newVisible ? 'bg-success-soft text-success-dark' : 'bg-neutral-subtle text-subtle'}`;
+            }
+            const isActivity = li.querySelector('.bg-brand-soft') !== null;
+            const iconWrapper = li.querySelector('.item-icon-wrapper');
+            if (iconWrapper) {
+              iconWrapper.className = `flex items-center justify-center w-8 h-8 rounded-lg shrink-0 item-icon-wrapper ${
+                isActivity 
+                  ? (newVisible ? 'bg-warning-soft text-warning-dark' : 'bg-neutral-subtle text-muted')
+                  : (newVisible ? 'bg-brand-soft text-brand-dark' : 'bg-neutral-subtle text-muted')
+              }`;
+            }
+            showWeekToast(newVisible ? 'Recurso visible' : 'Recurso oculto');
+          } catch(err) {
+            console.error(err);
+            toggleBtn.innerHTML = originalHtml;
+            showWeekToast('Error al cambiar visibilidad', true);
+          }
+        }
+
+        // Editar Recurso
+        const editBtn = target.closest('.edit-resource-btn');
+        if (editBtn) {
+          e.preventDefault(); e.stopPropagation();
+          const li = editBtn.closest('li');
+          const weekArticle = editBtn.closest('article');
+          if (!li || !weekArticle) return;
+          const weekId = weekArticle.getAttribute('data-week-id');
+          const itemId = li.getAttribute('data-item-id');
+          const itemTitle = li.querySelector('.item-title-link')?.textContent?.trim() || '';
+          const currentVisible = li.getAttribute('data-visible') === 'true';
+          const currentUrl = li.getAttribute('data-url') || '';
+          const isActivity = li.querySelector('.bg-brand-soft') !== null;
+          
+          const modalTitle = document.getElementById('upload-modal-title');
+          if (modalTitle) modalTitle.textContent = 'Editar Contenido';
+          const saveBtnLabel = document.getElementById('save-upload-label');
+          if (saveBtnLabel) saveBtnLabel.textContent = 'Guardar Cambios';
+
+          const titleInputs = document.querySelectorAll('input[name="materialTitle"], input[name="activityTitle"]');
+          titleInputs.forEach((i: Element) => (i as HTMLInputElement).value = itemTitle);
+
+          document.dispatchEvent(new CustomEvent('loadResourceForEdit', {
+            detail: { itemId, weekId, title: itemTitle, isActivity, visible: currentVisible, fileUrl: currentUrl }
+          }));
+
+          const sectionTitle = document.querySelector(`article[data-week-id="${weekId}"] h3`)?.textContent || 'Semana';
+          if ((window as any).__closeUploadModal) {
+            const uploadModalLabel = document.getElementById('upload-modal-section');
+            if (uploadModalLabel) uploadModalLabel.textContent = `Editando en: ${sectionTitle}`;
+            document.getElementById('content-upload-modal')?.classList.remove('opacity-0', 'pointer-events-none');
+            document.getElementById('upload-modal-panel')?.classList.remove('translate-y-4', 'sm:scale-95');
+            document.body.style.overflow = 'hidden';
+            currentWeekArticle = weekArticle;
+          }
+        }
+
+        // Eliminar Recurso
+        const deleteBtn = target.closest('.delete-resource-btn');
+        if (deleteBtn) {
+          e.preventDefault(); e.stopPropagation();
+          const li = deleteBtn.closest('li');
+          const weekArticle = deleteBtn.closest('article');
+          if (!li || !weekArticle) return;
+          const weekId = weekArticle.getAttribute('data-week-id');
+          const itemId = li.getAttribute('data-item-id');
+          const itemTitle = li.querySelector('.item-title-link')?.textContent?.trim() || 'este recurso';
+          if (!weekId || !itemId) return;
+
+          (window as any).openDeleteModal('delete-confirm-modal', itemTitle, async () => {
+            await deleteWeekItem(token, courseId, weekId, itemId);
+            const itemsList = weekArticle.querySelector('ul');
+            if (itemsList) {
+              li.style.opacity = '0';
+              li.style.transform = 'scale(0.95)';
+              setTimeout(() => {
+                li.remove();
+                const countLabel = weekArticle.querySelector('p.text-xs.text-subtle.font-medium');
+                if (countLabel) {
+                  const itemsCount = itemsList.children.length;
+                  countLabel.textContent = `${itemsCount} recurso${itemsCount !== 1 ? 's' : ''}`;
+                }
+              }, 300);
+            }
+          });
+        }
+      });
+    }
+  });
+</script>
+
+
+</TeacherDashboardLayout>

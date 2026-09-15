@@ -1,0 +1,227 @@
+---
+/**
+ * profesor/index.astro — Dashboard Principal del Profesor
+ * ─────────────────────────────────────────────────────────────────
+ * Vista inicial del portal docente.
+ * Secciones: KPIs, Próximas Clases, Entregas Pendientes, Anuncio Rápido.
+ */
+import TeacherDashboardLayout from '../../layouts/TeacherDashboardLayout.astro';
+import { Icon } from 'astro-icon/components';
+import { TEACHER_ROUTES } from '../../core/config/paths';
+import { getCourses, getClasses, getGrades } from '../../core/services/api';
+import { getUsers } from '../../core/services/users.service';
+import { authMe } from '../../core/services/auth.service';
+import type { Course, ClassSession, Grade, UserProfile } from '../../core/types/api.types';
+
+export const prerender = false;
+
+const token = Astro.cookies.get('ka_session')?.value ?? '';
+
+let courses: Course[] = [];
+let upcomingClasses: ClassSession[] = [];
+let recentGrades: Grade[] = []; // Used to represent submissions to review for now
+let user: UserProfile | null = null;
+let userName = 'Prof. Anderson';
+let totalAlumnos = 0;
+
+try {
+  const [coursesData, classesData, gradesData, userData, usersData] = await Promise.all([
+    getCourses(token, 1, 100),
+    getClasses(token, 1, 5),
+    getGrades(token, undefined, 1, 5), // Recent grades
+    authMe(token),
+    getUsers(token, 'estudiante', undefined, 1, 1) // Just 1 limit, we just need the count
+  ]);
+  courses = coursesData?.courses || [];
+  upcomingClasses = classesData?.classes || [];
+  recentGrades = gradesData?.grades || [];
+  totalAlumnos = usersData?.meta?.total ?? 0;
+  if (userData) {
+    user = userData;
+    const firstName = user?.fullName ? user.fullName.split(' ')[0] : 'Anderson';
+    userName = `Prof. ${firstName}`;
+  }
+} catch (error: any) {
+  console.error('Error fetching teacher dashboard data:', error);
+  if (error.statusCode === 401) {
+    Astro.cookies.delete('ka_session', { path: '/' });
+    Astro.cookies.delete('ka_role', { path: '/' });
+    return Astro.redirect('/login');
+  }
+}
+
+const teacherStats = [
+  { icon: 'lucide:users',           label: 'Total Alumnos',         value: totalAlumnos.toString(),  delta: 'Alumnos registrados',       deltaPositive: true  },
+  { icon: 'lucide:book-open',       label: 'Cursos Activos',        value: courses.length.toString(),   delta: 'Total de cursos asignados',  deltaPositive: true  },
+  { icon: 'lucide:inbox',           label: 'Entregas por Revisar',  value: '-',  delta: 'Requiere backend',      deltaPositive: false },
+  { icon: 'lucide:calendar-clock',  label: 'Clases Próximas',       value: upcomingClasses.length.toString(), delta: 'Programadas próximamente',  deltaPositive: true  },
+];
+---
+
+<TeacherDashboardLayout pageTitle="Inicio" breadcrumb="Portal Docente" activeNav="inicio" userName={userName}>
+
+  <div class="max-w-7xl mx-auto flex flex-col gap-8">
+
+    <!-- Saludo -->
+    <div>
+      <h1 class="text-3xl font-extrabold text-heading">Bienvenido, {userName} 👋</h1>
+      <p class="text-subtle font-medium mt-1 text-sm">Jueves, 4 de Septiembre 2026 — Tienes 1 clase hoy.</p>
+    </div>
+
+    <!-- KPIs -->
+    <section aria-labelledby="kpis-heading">
+      <h2 id="kpis-heading" class="sr-only">Estadísticas generales</h2>
+      <div class="grid grid-cols-2 lg:grid-cols-4 gap-4">
+        {teacherStats.map((stat) => (
+          <article class="bg-card rounded-2xl border border-edge p-5 flex flex-col gap-3 hover:shadow-sm transition-shadow">
+            <div class="flex items-center justify-between">
+              <div class="w-10 h-10 rounded-xl bg-brand-soft flex items-center justify-center shrink-0">
+                <Icon name={stat.icon} class="w-5 h-5 text-brand-dark" aria-hidden="true" />
+              </div>
+            </div>
+            <div>
+              <p class="text-3xl font-extrabold text-heading">{stat.value}</p>
+              <p class="text-sm font-semibold text-subtle mt-0.5">{stat.label}</p>
+            </div>
+            <p class={`text-xs font-semibold flex items-center gap-1 ${stat.deltaPositive ? 'text-success-dark' : 'text-danger'}`}>
+              <Icon name={stat.deltaPositive ? 'lucide:trending-up' : 'lucide:alert-circle'} class="w-3.5 h-3.5" aria-hidden="true" />
+              {stat.delta}
+            </p>
+          </article>
+        ))}
+      </div>
+    </section>
+
+    <!-- Grid principal -->
+    <div class="grid grid-cols-1 lg:grid-cols-[1fr_340px] gap-8 items-start">
+
+      <!-- Columna izquierda: Próximas Clases -->
+      <section aria-labelledby="proximas-clases-heading" class="bg-brand-soft/50 rounded-[2rem] p-6 sm:p-8">
+        <div class="flex items-start sm:items-center justify-between mb-6 flex-col sm:flex-row gap-3">
+          <div>
+            <h2 id="proximas-clases-heading" class="text-2xl font-extrabold text-heading">
+              Próximas Clases
+            </h2>
+            <p class="text-sm text-subtle mt-1 font-medium">Tu agenda docente para los próximos 7 días.</p>
+          </div>
+          <a href={TEACHER_ROUTES.courses} class="text-xs font-bold text-brand-dark hover:underline flex items-center gap-1 shrink-0">
+            Ver todos <Icon name="lucide:chevron-right" class="w-3.5 h-3.5" aria-hidden="true" />
+          </a>
+        </div>
+
+        <div class="flex flex-col gap-4">
+          {upcomingClasses.length === 0 ? (
+            <p class="text-sm text-subtle italic">No tienes clases próximas programadas.</p>
+          ) : upcomingClasses.map((cls) => {
+            const date = new Date(cls.scheduledAt || cls.scheduledDate);
+            const isToday = date.toDateString() === new Date().toDateString();
+            const dayLabel = isToday ? 'HOY' : date.toLocaleDateString('es-ES', { weekday: 'short' }).toUpperCase();
+            
+            return (
+            <article class="bg-card rounded-2xl p-4 flex flex-col sm:flex-row items-start sm:items-center gap-4 sm:gap-6 shadow-sm">
+              <!-- Día/hora -->
+              <div class={`${isToday ? 'bg-brand-soft/60' : 'bg-neutral-subtle'} rounded-xl px-4 py-3 text-center min-w-[80px] flex-shrink-0`}>
+                <p class={`font-bold text-xs tracking-wider mb-0.5 ${isToday ? 'text-brand' : 'text-subtle'}`}>{dayLabel}</p>
+                <p class="text-heading font-extrabold text-2xl leading-none">
+                  {date.toLocaleTimeString('es-ES', { hour: '2-digit', minute: '2-digit' })}
+                </p>
+              </div>
+
+              <!-- Info -->
+              <div class="flex-1 min-w-0">
+                <h3 class="text-base font-extrabold text-heading truncate">{cls.title}</h3>
+                <div class="flex flex-wrap items-center gap-x-4 gap-y-1 mt-1.5 text-xs text-subtle font-medium">
+                  {cls.course && (
+                    <span class="flex items-center gap-1.5">
+                      <Icon name="lucide:book-open" class="w-3.5 h-3.5" aria-hidden="true" />
+                      {cls.course.title}
+                    </span>
+                  )}
+                  <span class="flex items-center gap-1.5">
+                    <Icon name="lucide:clock" class="w-3.5 h-3.5" aria-hidden="true" />
+                    {cls.durationMinutes} min
+                  </span>
+                </div>
+              </div>
+
+              <!-- CTA -->
+              {isToday ? (
+                <a
+                  href={cls.meetUrl ?? '#'}
+                  class="bg-brand-dark hover:bg-brand text-white font-bold text-sm px-5 py-3 rounded-xl flex items-center gap-2 transition-colors w-full sm:w-auto justify-center flex-shrink-0"
+                >
+                  <Icon name="lucide:video" class="w-4 h-4" aria-hidden="true" />
+                  Iniciar Clase
+                </a>
+              ) : (
+                <span class="px-5 py-3 font-bold text-subtle text-sm flex-shrink-0 w-full sm:w-auto text-center">
+                  Programada
+                </span>
+              )}
+            </article>
+          )})}
+        </div>
+      </section>
+
+      <!-- Columna derecha: Entregas Pendientes -->
+      <aside class="flex flex-col gap-6">
+        <section aria-labelledby="entregas-heading">
+          <div class="flex items-center justify-between mb-5">
+            <h2 id="entregas-heading" class="text-2xl font-extrabold text-heading">Entregas Recientes</h2>
+            <a href={TEACHER_ROUTES.grades} class="text-xs font-bold text-brand-dark hover:underline">Ver todo</a>
+          </div>
+
+          <div class="flex flex-col gap-3">
+            {recentGrades.length === 0 ? (
+              <p class="text-sm text-subtle italic">No hay entregas recientes para revisar.</p>
+            ) : recentGrades.map((grade) => (
+              <article class={`bg-card rounded-2xl p-4 shadow-sm border flex gap-3 transition-colors border-success-soft bg-success-soft/30`}>
+                <div class={`w-9 h-9 rounded-xl flex items-center justify-center flex-shrink-0 bg-success-soft`}>
+                  <Icon
+                    name="lucide:check-circle-2"
+                    class={`w-4 h-4 text-success-dark`}
+                    aria-hidden="true"
+                  />
+                </div>
+                <div class="flex-1 min-w-0">
+                  <p class="text-sm font-bold text-heading truncate">{grade.gradedBy?.fullName || 'Estudiante'}</p>
+                  <p class="text-xs text-subtle font-medium mt-0.5 truncate">Calificación: {grade.score}/{grade.maxScore}</p>
+                  <div class="flex items-center justify-between mt-2">
+                    <span class="text-[10px] font-semibold text-muted">{new Date(grade.createdAt).toLocaleDateString()}</span>
+                  </div>
+                </div>
+              </article>
+            ))}
+          </div>
+        </section>
+
+        <!-- Crear anuncio rápido -->
+        <section class="bg-[#e64a19] rounded-[2rem] p-6 text-white relative overflow-hidden" aria-labelledby="anuncio-rapido-heading">
+          <div class="absolute top-0 right-0 w-28 h-28 bg-white/5 rounded-full -mr-8 -mt-8 blur-2xl pointer-events-none" aria-hidden="true"></div>
+          <div class="relative z-10">
+            <div class="flex items-center gap-3 mb-4">
+              <Icon name="lucide:megaphone" class="w-6 h-6 flex-shrink-0" aria-hidden="true" />
+              <h2 id="anuncio-rapido-heading" class="text-lg font-extrabold">Nuevo Anuncio</h2>
+            </div>
+            <p class="text-sm text-white/80 font-medium mb-4 leading-relaxed">
+              Envía un anuncio rápido a todos tus alumnos o a un curso específico.
+            </p>
+            <a
+              href={TEACHER_ROUTES.courseAnnouncements('ingles-intermedio-b2')}
+              class="inline-flex w-full items-center justify-center gap-2 bg-white text-brand-dark text-sm font-extrabold px-5 py-3 rounded-xl hover:bg-brand-soft transition-colors shadow-sm"
+            >
+              <Icon name="lucide:plus-circle" class="w-4 h-4" aria-hidden="true" />
+              Crear Anuncio
+            </a>
+          </div>
+        </section>
+      </aside>
+
+    </div>
+  </div>
+
+</TeacherDashboardLayout>
+
+<script>
+  // Auth manejada por middleware server-side (src/middleware.ts).
+</script>

@@ -1,0 +1,533 @@
+---
+/**
+ * profesor/cursos/[courseId]/calendario.astro — Calendario del Curso (datos reales)
+ * Sin data mockeada. Usa getCourseById + getCourseEvents + getCourseStats del backend.
+ */
+import TeacherDashboardLayout from '../../../../layouts/TeacherDashboardLayout.astro';
+import { Icon } from 'astro-icon/components';
+import { TEACHER_ROUTES } from '../../../../core/config/paths';
+import { getCourseById, getCourseStats } from '../../../../core/services/courses.service';
+import { getCourseEvents } from '../../../../core/services/calendar.service';
+
+export const prerender = false;
+
+const { courseId } = Astro.params;
+const token = Astro.cookies.get('ka_session')?.value ?? '';
+const API_URL = import.meta.env.PUBLIC_API_URL || 'http://localhost:3000/api/v1';
+
+
+if (!courseId) return Astro.redirect('/profesor');
+
+let courseApi;
+try {
+  courseApi = await getCourseById(token, courseId);
+} catch {
+  return Astro.redirect('/profesor/cursos');
+}
+
+const course = {
+  id:             courseApi.id,
+  title:          courseApi.title,
+  subtitle:       courseApi.subtitle ?? '',
+  code:           courseApi.code,
+  status:         courseApi.status.toUpperCase(),
+  bannerGradient: courseApi.bannerGradient ?? 'from-[#8B1A00] via-[#C0291A] to-[#E8402C]',
+};
+
+const [statsApi, eventsApi] = await Promise.all([
+  getCourseStats(token, courseId).catch(() => ({ studentCount: 0, activeStudents: 0, averageProgress: 0 })),
+  getCourseEvents(token, courseId).catch(() => []),
+]);
+
+// Serializar eventos para el cliente de forma segura (define:vars)
+const calendarEvents = eventsApi.map(e => ({
+  id:          e.id,
+  title:       e.title,
+  description: e.description ?? '',
+  eventType:   e.eventType ?? 'general',
+  startsAt:    e.startsAt,
+  endsAt:      e.endsAt ?? null,
+  allDay:      e.allDay ?? false,
+  color:       e.color ?? '#E8402C',
+}));
+
+const courseTabs = [
+  { label: 'Contenido',      icon: 'lucide:layout-list',  href: TEACHER_ROUTES.courseDetail(course.id),        active: false },
+  { label: 'Calendario',     icon: 'lucide:calendar',     href: TEACHER_ROUTES.courseCalendar(course.id),      active: true  },
+  { label: 'Alumnos',        icon: 'lucide:users',        href: TEACHER_ROUTES.courseStudents(course.id),      active: false },
+  { label: 'Anuncios',       icon: 'lucide:megaphone',    href: TEACHER_ROUTES.courseAnnouncements(course.id), active: false },
+  { label: 'Calificaciones', icon: 'lucide:book-marked',  href: TEACHER_ROUTES.courseGradebook(course.id),     active: false },
+];
+---
+
+<TeacherDashboardLayout
+  pageTitle={`Calendario - ${course.title}`}
+  breadcrumb="Calendario del Curso"
+  activeNav="cursos"
+>
+  <div class="-mx-6 lg:-mx-8 -mt-6 lg:-mt-8 flex flex-col">
+
+    <!-- BANNER HERO -->
+    <div class={`relative w-full bg-gradient-to-r ${course.bannerGradient} overflow-hidden`}>
+      <div class="absolute inset-0 pointer-events-none" aria-hidden="true">
+        <div class="absolute -right-16 -top-16 w-80 h-80 rounded-full bg-white/5 blur-3xl"></div>
+      </div>
+      <div class="relative z-10 px-8 lg:px-12 pt-8 pb-6">
+        <p class="text-white/60 text-xs font-semibold tracking-widest uppercase mb-2">{course.code}</p>
+        <div class="flex flex-col sm:flex-row sm:items-end justify-between gap-4">
+          <div>
+            <h1 class="text-3xl sm:text-4xl font-extrabold text-white tracking-tight mb-1">{course.title}</h1>
+            <p class="text-white/70 text-sm font-medium">{course.subtitle}</p>
+          </div>
+          <div class="flex items-center gap-3 self-start sm:self-end">
+            <span class="border border-white/40 text-white text-xs font-extrabold px-4 py-1.5 rounded-full tracking-widest">{course.status}</span>
+            <button type="button" id="new-event-btn"
+              class="flex items-center gap-2 bg-white text-brand-dark text-xs font-extrabold px-4 py-1.5 rounded-full hover:bg-brand-soft transition-colors shadow-sm">
+              <Icon name="lucide:plus-circle" class="w-3.5 h-3.5" aria-hidden="true" /> Nuevo Evento
+            </button>
+          </div>
+        </div>
+        <div class="mt-5 flex items-center gap-6 flex-wrap">
+          <span class="flex items-center gap-2 text-white/80 text-xs font-semibold">
+            <Icon name="lucide:users" class="w-4 h-4" /> {statsApi.studentCount} alumnos
+          </span>
+          <span class="flex items-center gap-2 text-white/80 text-xs font-semibold">
+            <Icon name="lucide:trending-up" class="w-4 h-4" /> {statsApi.averageProgress}% promedio
+          </span>
+          <span class="flex items-center gap-2 text-white/80 text-xs font-semibold">
+            <Icon name="lucide:calendar" class="w-4 h-4" /> {calendarEvents.length} evento{calendarEvents.length !== 1 ? 's' : ''} programado{calendarEvents.length !== 1 ? 's' : ''}
+          </span>
+        </div>
+      </div>
+      <nav class="relative z-10 border-t border-white/10">
+        <div class="flex items-center overflow-x-auto px-6 lg:px-12">
+          {courseTabs.map(tab => (
+            <a href={tab.href}
+              class={['flex items-center gap-2 px-4 py-4 text-sm font-semibold whitespace-nowrap border-b-[3px] transition-all shrink-0',
+                tab.active ? 'border-white text-white' : 'border-transparent text-white/60 hover:text-white/90 hover:border-white/30'].join(' ')}>
+              <Icon name={tab.icon} class="w-4 h-4" /> {tab.label}
+            </a>
+          ))}
+        </div>
+      </nav>
+    </div>
+
+    <!-- CUERPO -->
+    <div class="bg-page px-4 sm:px-6 lg:px-8 py-6">
+      <div class="max-w-[1200px] mx-auto">
+        <div class="bg-card rounded-3xl border border-edge shadow-sm overflow-hidden">
+
+          <!-- Toolbar -->
+          <div class="cal-toolbar">
+            <div class="cal-nav">
+              <button id="cal-prev" class="cal-nav-btn" aria-label="Anterior">&#8249;</button>
+              <span id="cal-title" class="cal-title-text">cargando…</span>
+              <button id="cal-next" class="cal-nav-btn" aria-label="Siguiente">&#8250;</button>
+            </div>
+            <div class="cal-view-switch">
+              <button id="btn-week"  class="cal-switch-btn active">Semana</button>
+              <button id="btn-month" class="cal-switch-btn">Mes</button>
+            </div>
+          </div>
+
+          <div id="cal-root"></div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- MODAL CREAR EVENTO -->
+  <div id="new-event-modal"
+    class="fixed inset-0 z-50 flex items-end sm:items-center justify-center opacity-0 pointer-events-none transition-opacity duration-300"
+    role="dialog" aria-modal="true" aria-labelledby="new-event-title">
+    <div id="new-event-backdrop" class="absolute inset-0 bg-black/50 backdrop-blur-sm cursor-pointer"></div>
+    <div id="new-event-panel"
+      class="relative bg-card w-full sm:w-[90%] sm:max-w-lg max-h-[90vh] rounded-t-3xl sm:rounded-3xl shadow-2xl flex flex-col overflow-hidden transform translate-y-4 sm:scale-95 transition-transform duration-300 border border-edge">
+      <div class="px-6 py-5 border-b border-edge-soft flex items-center justify-between bg-neutral-bg/30 shrink-0">
+        <div class="flex items-center gap-3">
+          <div class="w-9 h-9 rounded-full bg-brand-soft flex items-center justify-center shrink-0">
+            <Icon name="lucide:calendar-plus" class="w-4 h-4 text-brand-dark" aria-hidden="true" />
+          </div>
+          <h2 id="new-event-title" class="text-base font-extrabold text-heading">Nuevo Evento</h2>
+        </div>
+        <button id="close-new-event-btn" type="button"
+          class="p-2 rounded-full hover:bg-neutral-subtle text-subtle hover:text-heading transition-colors" aria-label="Cerrar">
+          <Icon name="lucide:x" class="w-4 h-4" aria-hidden="true" />
+        </button>
+      </div>
+      <div class="p-6 overflow-y-auto flex-1 flex flex-col gap-4">
+        <div class="flex flex-col gap-1.5">
+          <label for="evt-title" class="text-xs font-bold text-heading uppercase tracking-wider">Título *</label>
+          <input type="text" id="evt-title" placeholder="Ej: Clase presencial – Semana 5"
+            class="w-full px-4 py-3 rounded-xl border border-edge bg-neutral-bg/30 text-sm text-heading font-medium placeholder:text-muted focus:outline-none focus:ring-2 focus:ring-brand focus:border-transparent transition" />
+        </div>
+        <div class="grid grid-cols-2 gap-3">
+          <div class="flex flex-col gap-1.5">
+            <label for="evt-start" class="text-xs font-bold text-heading uppercase tracking-wider">Inicio *</label>
+            <input type="datetime-local" id="evt-start"
+              class="w-full px-4 py-3 rounded-xl border border-edge bg-neutral-bg/30 text-sm text-heading font-medium focus:outline-none focus:ring-2 focus:ring-brand focus:border-transparent transition" />
+          </div>
+          <div class="flex flex-col gap-1.5">
+            <label for="evt-end" class="text-xs font-bold text-heading uppercase tracking-wider">Fin</label>
+            <input type="datetime-local" id="evt-end"
+              class="w-full px-4 py-3 rounded-xl border border-edge bg-neutral-bg/30 text-sm text-heading font-medium focus:outline-none focus:ring-2 focus:ring-brand focus:border-transparent transition" />
+          </div>
+        </div>
+        <div class="flex flex-col gap-1.5">
+          <label for="evt-type" class="text-xs font-bold text-heading uppercase tracking-wider">Tipo</label>
+          <select id="evt-type"
+            class="w-full px-4 py-3 rounded-xl border border-edge bg-neutral-bg/30 text-sm text-heading font-medium focus:outline-none focus:ring-2 focus:ring-brand focus:border-transparent transition">
+            <option value="clase">Clase</option>
+            <option value="tarea">Tarea</option>
+            <option value="quiz">Quiz</option>
+            <option value="evaluacion">Evaluación</option>
+            <option value="general">General</option>
+          </select>
+        </div>
+        <div class="flex flex-col gap-1.5">
+          <label for="evt-description" class="text-xs font-bold text-heading uppercase tracking-wider">Descripción</label>
+          <textarea id="evt-description" rows={3} placeholder="Descripción opcional..."
+            class="w-full px-4 py-3 rounded-xl border border-edge bg-neutral-bg/30 text-sm text-heading font-medium placeholder:text-muted focus:outline-none focus:ring-2 focus:ring-brand focus:border-transparent transition resize-none"></textarea>
+        </div>
+      </div>
+      <div class="px-6 py-4 border-t border-edge-soft flex items-center justify-end gap-3 bg-neutral-bg/20 shrink-0">
+        <button type="button" id="cancel-new-event-btn"
+          class="px-5 py-2.5 rounded-xl border border-edge text-sm font-bold text-subtle hover:bg-neutral-subtle hover:text-heading transition-colors">Cancelar</button>
+        <button type="button" id="save-new-event-btn"
+          class="flex items-center gap-2 px-6 py-2.5 rounded-xl bg-brand text-white text-sm font-bold hover:bg-brand-dark transition-colors shadow-sm">
+          <span id="save-event-label">Guardar Evento</span>
+          <svg id="save-event-spinner" xmlns="http://www.w3.org/2000/svg" class="w-4 h-4 animate-spin hidden" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 12a9 9 0 1 1-6.219-8.56"/></svg>
+        </button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Toast -->
+  <div id="cal-toast"
+    class="fixed bottom-6 right-6 z-[60] flex items-center gap-3 bg-heading text-white px-5 py-4 rounded-2xl shadow-2xl translate-y-20 opacity-0 transition-all duration-500 pointer-events-none"
+    role="status" aria-live="polite">
+    <div id="cal-toast-icon" class="w-7 h-7 rounded-full bg-success flex items-center justify-center flex-shrink-0 text-xs font-black">✓</div>
+    <p id="cal-toast-text" class="text-sm font-extrabold"></p>
+  </div>
+
+<style is:global>
+.cal-toolbar { display:flex; align-items:center; justify-content:space-between; padding:16px 24px; border-bottom:1px solid var(--color-edge); }
+.cal-nav { display:flex; align-items:center; gap:12px; }
+.cal-nav-btn { width:36px; height:36px; border:1px solid var(--color-edge); border-radius:10px; background:var(--color-card); color:var(--color-subtle); font-size:18px; font-weight:700; cursor:pointer; display:flex; align-items:center; justify-content:center; transition:background 0.15s,color 0.15s; }
+.cal-nav-btn:hover { background:var(--color-neutral-subtle); color:var(--color-heading); }
+.cal-title-text { font-size:15px; font-weight:800; color:var(--color-heading); min-width:180px; text-align:center; }
+.cal-view-switch { display:flex; background:var(--color-neutral-bg,#f5f5f5); border:1px solid var(--color-edge); border-radius:12px; padding:4px; gap:2px; }
+.cal-switch-btn { padding:7px 20px; border-radius:8px; border:none; outline:none; font-size:12px; font-weight:700; cursor:pointer; color:var(--color-subtle); background:transparent; transition:all 0.2s; }
+.cal-switch-btn.active { background:var(--color-card); color:var(--color-heading); box-shadow:0 1px 4px rgba(0,0,0,0.08); }
+
+.week-wrapper { display:flex; flex-direction:column; }
+.week-header-row { display:flex; border-bottom:1px solid var(--color-edge); background:var(--color-neutral-bg,#f9f9f9); }
+.week-time-spacer { width:72px; flex-shrink:0; border-right:1px solid var(--color-edge); }
+.week-days-header { flex:1; display:flex; }
+.week-day-header { flex:1; padding:12px 0; text-align:center; border-right:1px solid var(--color-edge); position:relative; }
+.week-day-header:last-child { border-right:none; }
+.week-day-abbr { display:block; font-size:11px; font-weight:800; letter-spacing:0.1em; text-transform:uppercase; color:var(--color-subtle); }
+.week-day-abbr.today { color:var(--color-brand); }
+.week-day-num { display:block; font-size:22px; font-weight:800; color:var(--color-heading); line-height:1.1; margin-top:2px; }
+.week-day-num.today { color:var(--color-brand); }
+.week-today-bar { position:absolute; bottom:0; left:50%; transform:translateX(-50%); width:28px; height:3px; background:var(--color-brand); border-radius:4px 4px 0 0; }
+.week-body { display:flex; overflow-y:auto; max-height:600px; }
+.week-times { width:72px; flex-shrink:0; border-right:1px solid var(--color-edge); position:relative; }
+.week-time-label { position:absolute; right:10px; font-size:10px; font-weight:700; color:var(--color-subtle); transform:translateY(-50%); }
+.week-cols { flex:1; display:flex; position:relative; }
+.week-hour-line { position:absolute; left:0; right:0; border-top:1px solid var(--color-edge-soft,#ebebeb); pointer-events:none; }
+.week-day-col { flex:1; position:relative; border-right:1px solid var(--color-edge); }
+.week-day-col:last-child { border-right:none; }
+.cal-event { position:absolute; left:4px; right:4px; border-radius:10px; overflow:hidden; display:flex; box-shadow:0 1px 4px rgba(0,0,0,0.07); cursor:pointer; transition:box-shadow 0.15s,opacity 0.15s; }
+.cal-event:hover { box-shadow:0 3px 10px rgba(0,0,0,0.12); opacity:0.92; }
+.cal-event-bar { width:4px; flex-shrink:0; background:var(--color-brand); }
+.cal-event-body { flex:1; background:color-mix(in srgb,var(--color-brand) 12%,white 88%); padding:6px 8px; display:flex; flex-direction:column; gap:2px; overflow:hidden; }
+.cal-event-title { font-size:11px; font-weight:800; color:var(--color-heading); line-height:1.3; overflow:hidden; display:-webkit-box; -webkit-line-clamp:2; -webkit-box-orient:vertical; }
+.cal-event-time { font-size:10px; font-weight:600; color:var(--color-subtle); }
+.now-line { position:absolute; left:0; right:0; z-index:10; display:flex; align-items:center; pointer-events:none; }
+.now-dot { width:10px; height:10px; border-radius:50%; background:var(--color-brand); flex-shrink:0; margin-left:-5px; }
+.now-rule { flex:1; height:2px; background:var(--color-brand); }
+
+.month-header-row { display:grid; grid-template-columns:repeat(7,1fr); border-bottom:1px solid var(--color-edge); background:var(--color-neutral-bg,#f9f9f9); }
+.month-dow { padding:10px 0; text-align:center; font-size:11px; font-weight:800; letter-spacing:0.1em; text-transform:uppercase; color:var(--color-subtle); border-right:1px solid var(--color-edge); }
+.month-dow:last-child { border-right:none; }
+.month-grid { display:grid; grid-template-columns:repeat(7,1fr); }
+.month-cell { min-height:96px; padding:8px 6px; border-right:1px solid var(--color-edge); border-bottom:1px solid var(--color-edge); }
+.month-cell:nth-child(7n) { border-right:none; }
+.month-cell.other-month { background:var(--color-neutral-bg,#f9f9f9); }
+.month-day-num { font-size:13px; font-weight:700; color:var(--color-heading); display:inline-flex; align-items:center; justify-content:center; width:28px; height:28px; border-radius:50%; margin-bottom:4px; }
+.month-day-num.today { background:var(--color-brand); color:white; }
+.month-day-num.other { color:var(--color-muted); }
+.month-event-pill { font-size:10px; font-weight:700; background:color-mix(in srgb,var(--color-brand) 15%,white 85%); border-left:3px solid var(--color-brand); color:var(--color-heading); padding:2px 6px; border-radius:0 4px 4px 0; margin-bottom:2px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; cursor:pointer; }
+.cal-empty-state { display:flex; flex-direction:column; align-items:center; justify-content:center; padding:48px 24px; gap:12px; color:var(--color-subtle); }
+.cal-empty-state p { font-size:13px; font-weight:600; text-align:center; }
+</style>
+
+<script define:vars={{ courseId, calendarEvents, API_URL }}>
+  const API_BASE = API_URL;
+
+
+  function getToken() {
+    const tokenMatch = document.cookie.match(/(?:^|; )ka_session=([^;]*)/);
+    return tokenMatch ? tokenMatch[1] : '';
+  }
+
+  // Eventos reales del backend (inyectados por define:vars)
+  let EVENTS = calendarEvents.map(e => {
+    const start = new Date(e.startsAt);
+    const end   = e.endsAt ? new Date(e.endsAt) : null;
+    return {
+      id:        e.id,
+      title:     e.title,
+      eventType: e.eventType,
+      // Día de semana 0=Lun..4=Vie para vista semana
+      col:       (start.getDay() === 0 ? 6 : start.getDay() - 1),
+      start:     start.getHours() + start.getMinutes() / 60,
+      dur:       end ? Math.max(0.5, (end - start) / 3600000) : 1,
+      time:      start.toLocaleTimeString('es-CO', { hour: '2-digit', minute: '2-digit' }) +
+                 (end ? ' – ' + end.toLocaleTimeString('es-CO', { hour: '2-digit', minute: '2-digit' }) : ''),
+      date:      start,
+    };
+  });
+
+  const HOUR_PX = 80, START_HOUR = 7, END_HOUR = 19, TOTAL_H = END_HOUR - START_HOUR;
+  const GRID_PX  = TOTAL_H * HOUR_PX;
+  const DAYS_ES  = ['LUN','MAR','MIÉ','JUE','VIE','SÁB','DOM'];
+  const MONTHS_ES = ['Enero','Febrero','Marzo','Abril','Mayo','Junio','Julio','Agosto','Septiembre','Octubre','Noviembre','Diciembre'];
+
+  let viewMode = 'week';
+  const today  = new Date();
+
+  function getMonday(d) { const c=new Date(d); c.setHours(0,0,0,0); const dow=c.getDay(); c.setDate(c.getDate()-(dow===0?6:dow-1)); return c; }
+  function addDays(d,n) { const r=new Date(d); r.setDate(r.getDate()+n); return r; }
+  function sameDay(a,b) { return a.getFullYear()===b.getFullYear()&&a.getMonth()===b.getMonth()&&a.getDate()===b.getDate(); }
+
+  let weekStart = getMonday(today);
+  let monthCur  = { y: today.getFullYear(), m: today.getMonth() };
+
+  const calRoot  = document.getElementById('cal-root');
+  const calTitle = document.getElementById('cal-title');
+  const calPrev  = document.getElementById('cal-prev');
+  const calNext  = document.getElementById('cal-next');
+  const btnWeek  = document.getElementById('btn-week');
+  const btnMonth = document.getElementById('btn-month');
+
+  function getEventsForWeek(days) {
+    return EVENTS.filter(e => days.some(d => sameDay(d, e.date)));
+  }
+
+  function renderWeek() {
+    const days = Array.from({length:5},(_,i)=>addDays(weekStart,i));
+    const end4 = days[4];
+    calTitle.textContent = weekStart.getMonth()===end4.getMonth()
+      ? `${weekStart.getDate()} – ${end4.getDate()} ${MONTHS_ES[end4.getMonth()].slice(0,3)} ${end4.getFullYear()}`
+      : `${weekStart.getDate()} ${MONTHS_ES[weekStart.getMonth()].slice(0,3)} – ${end4.getDate()} ${MONTHS_ES[end4.getMonth()].slice(0,3)} ${end4.getFullYear()}`;
+
+    const timeLabels = Array.from({length:TOTAL_H+1},(_,i)=>`${String(START_HOUR+i).padStart(2,'0')}:00`);
+    const nowH = today.getHours() + today.getMinutes()/60;
+    const nowPx = (nowH - START_HOUR)*HOUR_PX;
+    const todayCol = days.findIndex(d=>sameDay(d,today));
+    const weekEvents = getEventsForWeek(days);
+
+    let html = `<div class="week-wrapper">
+      <div class="week-header-row">
+        <div class="week-time-spacer"></div>
+        <div class="week-days-header">`;
+    days.forEach((d,i) => {
+      const isTd = sameDay(d,today);
+      html += `<div class="week-day-header">
+        <span class="week-day-abbr${isTd?' today':''}">${DAYS_ES[i]}</span>
+        <span class="week-day-num${isTd?' today':''}">${d.getDate()}</span>
+        ${isTd?'<div class="week-today-bar"></div>':''}
+      </div>`;
+    });
+    html += `</div></div><div class="week-body">
+      <div class="week-times" style="height:${GRID_PX}px">`;
+    timeLabels.forEach((lbl,i) => { html += `<div class="week-time-label" style="top:${i*HOUR_PX}px">${lbl}</div>`; });
+    html += `</div><div class="week-cols" style="height:${GRID_PX}px">`;
+    timeLabels.forEach((_,i) => { html += `<div class="week-hour-line" style="top:${i*HOUR_PX}px"></div>`; });
+    if (todayCol>=0 && nowH>=START_HOUR && nowH<=END_HOUR) {
+      html += `<div class="now-line" style="top:${nowPx}px;left:${(todayCol/5)*100}%;width:20%"><div class="now-dot"></div><div class="now-rule"></div></div>`;
+    }
+    for(let c=0;c<5;c++) {
+      html += `<div class="week-day-col">`;
+      const dayEvts = weekEvents.filter(e => {
+        const evDay = days[c];
+        return evDay && sameDay(evDay, e.date);
+      });
+      if (dayEvts.length === 0 && c === 0 && weekEvents.length === 0 && days.some(d=>sameDay(d,today))) {
+        // empty indicator solo en el día de hoy si no hay eventos
+      }
+      dayEvts.forEach(ev => {
+        const topPx = Math.max(0,(ev.start - START_HOUR)*HOUR_PX);
+        const htPx  = Math.max(30, ev.dur*HOUR_PX);
+        html += `<div class="cal-event" style="top:${topPx}px;height:${htPx}px">
+          <div class="cal-event-bar"></div>
+          <div class="cal-event-body">
+            <div class="cal-event-title">${ev.title}</div>
+            <div class="cal-event-time">${ev.time}</div>
+          </div>
+        </div>`;
+      });
+      html += `</div>`;
+    }
+    html += `</div></div></div>`;
+
+    if (weekEvents.length === 0) {
+      html += `<div class="cal-empty-state"><p>No hay eventos esta semana.<br>Crea uno con el botón "Nuevo Evento".</p></div>`;
+    }
+    calRoot.innerHTML = html;
+  }
+
+  function renderMonth() {
+    const {y,m} = monthCur;
+    calTitle.textContent = `${MONTHS_ES[m]} ${y}`;
+    const firstDow = new Date(y,m,1).getDay();
+    const offset   = firstDow===0?6:firstDow-1;
+    const daysInMon= new Date(y,m+1,0).getDate();
+    const cells    = Math.ceil((offset+daysInMon)/7)*7;
+
+    let html = `<div><div class="month-header-row">`;
+    ['LUN','MAR','MIÉ','JUE','VIE','SÁB','DOM'].forEach(d => { html+=`<div class="month-dow">${d}</div>`; });
+    html += `</div><div class="month-grid">`;
+    for(let i=0;i<cells;i++) {
+      const dayNum  = i-offset+1;
+      const inMonth = dayNum>=1 && dayNum<=daysInMon;
+      const date    = new Date(y,m,dayNum);
+      const isTd    = inMonth && sameDay(date,today);
+      const dayEvts = inMonth ? EVENTS.filter(e => sameDay(e.date, date)) : [];
+      html += `<div class="month-cell${inMonth?'':' other-month'}">`;
+      if(inMonth) {
+        html += `<div class="month-day-num${isTd?' today':''}">${dayNum}</div>`;
+        dayEvts.forEach(ev => { html+=`<div class="month-event-pill">${ev.title}</div>`; });
+      }
+      html += `</div>`;
+    }
+    html += `</div></div>`;
+    if (EVENTS.length === 0) {
+      html += `<div class="cal-empty-state"><p>No hay eventos este mes.<br>Crea uno con el botón "Nuevo Evento".</p></div>`;
+    }
+    calRoot.innerHTML = html;
+  }
+
+  function setView(mode) {
+    viewMode = mode;
+    btnWeek.classList.toggle('active', mode==='week');
+    btnMonth.classList.toggle('active', mode==='month');
+    mode==='week' ? renderWeek() : renderMonth();
+  }
+
+  calPrev.addEventListener('click', () => {
+    if(viewMode==='week'){ weekStart=addDays(weekStart,-7); renderWeek(); }
+    else { monthCur.m--; if(monthCur.m<0){monthCur.m=11;monthCur.y--;} renderMonth(); }
+  });
+  calNext.addEventListener('click', () => {
+    if(viewMode==='week'){ weekStart=addDays(weekStart,7); renderWeek(); }
+    else { monthCur.m++; if(monthCur.m>11){monthCur.m=0;monthCur.y++;} renderMonth(); }
+  });
+  btnWeek.addEventListener('click', () => setView('week'));
+  btnMonth.addEventListener('click', () => setView('month'));
+  setView('week');
+
+  // ── Toast ──────────────────────────────────────────────────
+  function showToast(msg, success=true) {
+    const toast=document.getElementById('cal-toast');
+    const icon=document.getElementById('cal-toast-icon');
+    const text=document.getElementById('cal-toast-text');
+    if(!toast||!icon||!text) return;
+    text.textContent=msg; icon.textContent=success?'✓':'✕';
+    icon.className=`w-7 h-7 rounded-full flex items-center justify-center flex-shrink-0 text-xs font-black ${success?'bg-success':'bg-danger'}`;
+    toast.classList.remove('translate-y-20','opacity-0','pointer-events-none');
+    toast.classList.add('translate-y-0','opacity-100');
+    setTimeout(()=>{toast.classList.add('translate-y-20','opacity-0','pointer-events-none');toast.classList.remove('translate-y-0','opacity-100');},3500);
+  }
+
+  // ── MODAL NUEVO EVENTO ────────────────────────────────────
+  const newEventModal   = document.getElementById('new-event-modal');
+  const newEventBackdrop= document.getElementById('new-event-backdrop');
+  const newEventPanel   = document.getElementById('new-event-panel');
+  const saveEventBtn    = document.getElementById('save-new-event-btn');
+  const saveEventLbl    = document.getElementById('save-event-label');
+  const saveEventSpin   = document.getElementById('save-event-spinner');
+
+  function openNewEvent() {
+    newEventModal.classList.remove('opacity-0','pointer-events-none');
+    newEventPanel.classList.remove('translate-y-4','sm:scale-95');
+    document.body.style.overflow='hidden';
+  }
+  function closeNewEvent() {
+    newEventModal.classList.add('opacity-0','pointer-events-none');
+    newEventPanel.classList.add('translate-y-4','sm:scale-95');
+    document.body.style.overflow='';
+  }
+
+  document.getElementById('new-event-btn')?.addEventListener('click', openNewEvent);
+  document.getElementById('close-new-event-btn')?.addEventListener('click', closeNewEvent);
+  document.getElementById('cancel-new-event-btn')?.addEventListener('click', closeNewEvent);
+  newEventBackdrop?.addEventListener('click', closeNewEvent);
+
+  saveEventBtn?.addEventListener('click', async () => {
+    const title  = document.getElementById('evt-title').value.trim();
+    const start  = document.getElementById('evt-start').value;
+    const end    = document.getElementById('evt-end').value;
+    const type   = document.getElementById('evt-type').value;
+    const desc   = document.getElementById('evt-description').value.trim();
+
+    if (!title || !start) {
+      if(!title) document.getElementById('evt-title').classList.add('ring-2','ring-red-400');
+      if(!start) document.getElementById('evt-start').classList.add('ring-2','ring-red-400');
+      return;
+    }
+    ['evt-title','evt-start'].forEach(id=>document.getElementById(id).classList.remove('ring-2','ring-red-400'));
+
+    saveEventBtn.disabled=true; saveEventLbl.classList.add('hidden'); saveEventSpin.classList.remove('hidden');
+    const token = getToken();
+    try {
+      const res = await fetch(`${API_BASE}/calendar`, {
+        method: 'POST',
+        headers: { 'Content-Type':'application/json', Authorization:`Bearer ${token}` },
+        body: JSON.stringify({
+          courseId,
+          title,
+          startsAt: new Date(start).toISOString(),
+          endsAt:   end ? new Date(end).toISOString() : undefined,
+          eventType: type,
+          description: desc || undefined,
+        }),
+      });
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      const json  = await res.json();
+      const saved = json.data ?? json;
+
+      // Agregar al array local y re-renderizar
+      const startD = new Date(saved.startsAt);
+      const endD   = saved.endsAt ? new Date(saved.endsAt) : null;
+      EVENTS.push({
+        id:        saved.id,
+        title:     saved.title,
+        eventType: saved.eventType,
+        col:       startD.getDay()===0?6:startD.getDay()-1,
+        start:     startD.getHours()+startD.getMinutes()/60,
+        dur:       endD ? Math.max(0.5,(endD-startD)/3600000) : 1,
+        time:      startD.toLocaleTimeString('es-CO',{hour:'2-digit',minute:'2-digit'}) + (endD?' – '+endD.toLocaleTimeString('es-CO',{hour:'2-digit',minute:'2-digit'}):''),
+        date:      startD,
+      });
+
+      viewMode==='week' ? renderWeek() : renderMonth();
+      closeNewEvent();
+      showToast('✓ Evento creado correctamente');
+      ['evt-title','evt-start','evt-end','evt-description'].forEach(id=>{const el=document.getElementById(id);if(el)el.value='';});
+    } catch(err) {
+      console.error('Error creando evento:', err);
+      showToast('Error al crear el evento.', false);
+    } finally {
+      saveEventBtn.disabled=false; saveEventLbl.classList.remove('hidden'); saveEventSpin.classList.add('hidden');
+    }
+  });
+
+  document.addEventListener('keydown', e => {
+    if(e.key==='Escape') closeNewEvent();
+  });
+</script>
+
+</TeacherDashboardLayout>

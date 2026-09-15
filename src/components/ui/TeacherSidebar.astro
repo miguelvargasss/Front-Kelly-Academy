@@ -1,0 +1,134 @@
+---
+/**
+ * TeacherSidebar.astro
+ * Sidebar de navegación del dashboard de profesores.
+ * Misma estética que Sidebar.astro (estudiantes) pero con rutas de docente.
+ */
+import { Icon } from 'astro-icon/components';
+import { getRoleRoutes } from '../../core/services/api';
+
+interface Props {
+  activeNav: string; // Changed to string to be dynamic
+}
+
+const { activeNav } = Astro.props;
+
+// Obtener token y rol de las cookies
+const token = Astro.cookies.get('ka_session')?.value ?? '';
+const role = (Astro.cookies.get('ka_role')?.value as 'profesor' | 'estudiante') ?? 'profesor';
+
+interface TeacherNavItem {
+  id: string;
+  label: string;
+  href: string;
+  icon: string;
+  badge?: number;
+}
+
+// Fetch rutas desde la API
+let navItems: TeacherNavItem[] = [];
+try {
+  const routesData = await getRoleRoutes(token, role);
+  // Filtrar solo las rutas del profesor y mapear al formato esperado
+  navItems = routesData
+    // Las rutas del profesor se identifican por su path, no por el campo `module`
+    // (el campo `module` refleja el dominio: 'courses', 'grades', etc.)
+    // Excluimos rutas dinámicas (:courseId) — no son ítems de menú principal
+    .filter((r: any) =>
+      r.route.path.startsWith('/profesor') &&
+      r.route.isActive &&
+      !r.route.path.includes(':') &&
+      r.route.path !== '/profesor/nueva-clase'
+    )
+    .map((r: any) => {
+      // Mapa de íconos por path: la BD guarda texto en `description`, no íconos.
+      const ICON_MAP: Record<string, string> = {
+        '/profesor':                   'lucide:layout-dashboard',
+        '/profesor/alumnos':           'lucide:users',
+        '/profesor/cursos':            'lucide:book-open',
+        '/profesor/calificaciones':    'lucide:clipboard-check',
+        '/profesor/biblioteca':        'lucide:library',
+        '/profesor/configuracion':     'lucide:settings',
+      };
+      const icon = ICON_MAP[r.route.path] ?? 'lucide:layout-dashboard';
+
+      // Inferir ID básico desde el path (ej: '/profesor/cursos' -> 'cursos')
+      let id = r.route.path.split('/').pop() || 'inicio';
+      if (r.route.path === '/profesor') id = 'inicio';
+
+      return {
+        id,
+        label: r.route.name,
+        href: r.route.path,
+        icon,
+      };
+    });
+} catch (error: any) {
+  if (error?.statusCode === 401) {
+    return Astro.redirect('/logout');
+  }
+  console.error("Error fetching role routes in TeacherSidebar:", error);
+  // Fallback opcional si la API falla o no está lista
+  navItems = [];
+}
+---
+
+<aside class="w-64 flex-shrink-0 bg-sidebar flex flex-col h-full">
+
+  <!-- Brand -->
+  <div class="flex items-center px-6 py-5 bg-white w-full border-b border-edge">
+    <div class="flex items-center gap-3">
+      <div class="w-9 h-9 bg-neutral-subtle rounded-md flex items-center justify-center font-bold text-heading text-lg shrink-0">
+        K
+      </div>
+      <div class="font-extrabold text-heading text-lg leading-none tracking-tight">
+        Kelly<br/>Academy
+      </div>
+    </div>
+  </div>
+
+  <!-- Rol badge -->
+  <div class="px-6 py-3 border-b border-white/10">
+    <span class="inline-flex items-center gap-1.5 text-[10px] font-bold tracking-widest uppercase text-white/50">
+      <Icon name="lucide:graduation-cap" class="w-3.5 h-3.5" aria-hidden="true" />
+      Portal Docente
+    </span>
+  </div>
+
+
+  <!-- Nav -->
+  <nav class="flex-1 px-4 py-2 space-y-1.5" aria-label="Navegación del profesor">
+    {navItems.map((item) => {
+      const isActive = item.id === activeNav;
+      return (
+        <a
+          href={item.href}
+          aria-current={isActive ? 'page' : undefined}
+          class={`flex items-center gap-3 px-4 py-3 rounded-xl text-sm font-semibold transition-colors duration-200 ${
+            isActive ? 'bg-brand text-white shadow-md' : 'text-faint hover:bg-white/10 hover:text-white'
+          }`}
+        >
+          <Icon name={item.icon} class="w-5 h-5 flex-shrink-0" />
+          <span class="flex-1">{item.label}</span>
+          {item.badge && item.badge > 0 && (
+            <span class="ml-auto min-w-[20px] h-5 px-1.5 bg-white/20 text-white text-[10px] font-bold rounded-full flex items-center justify-center">
+              {item.badge}
+            </span>
+          )}
+        </a>
+      );
+    })}
+  </nav>
+
+  <!-- Cerrar Sesión -->
+  <div class="px-4 py-6 border-t border-white/10">
+    <a
+      href="/logout"
+      class="flex items-center gap-3 px-4 py-3 rounded-xl text-sm font-semibold text-red-400 hover:bg-danger/10 hover:text-red-300 transition-colors duration-200"
+    >
+      <Icon name="lucide:log-out" class="w-5 h-5 flex-shrink-0" />
+      Cerrar Sesión
+    </a>
+  </div>
+
+</aside>

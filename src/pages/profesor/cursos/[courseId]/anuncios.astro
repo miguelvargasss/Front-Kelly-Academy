@@ -1,0 +1,508 @@
+---
+/**
+ * profesor/cursos/[courseId]/anuncios.astro — Gestión de Anuncios (Profesor)
+ * Conectado 100% a la BD real. Sin data mockeada.
+ */
+import TeacherDashboardLayout from '../../../../layouts/TeacherDashboardLayout.astro';
+import { Icon } from 'astro-icon/components';
+import { TEACHER_ROUTES } from '../../../../core/config/paths';
+import { getCourseById } from '../../../../core/services/courses.service';
+import { getCourseAnnouncements } from '../../../../core/services/announcements.service';
+import DeleteConfirmModal from '../../../../components/ui/DeleteConfirmModal.astro';
+
+export const prerender = false;
+
+const { courseId } = Astro.params;
+const token = Astro.cookies.get('ka_session')?.value ?? '';
+const API_URL = import.meta.env.PUBLIC_API_URL || 'http://localhost:3000/api/v1';
+
+if (!courseId) return Astro.redirect('/profesor');
+
+let courseApi;
+try {
+  courseApi = await getCourseById(token, courseId);
+} catch {
+  return Astro.redirect('/profesor/cursos');
+}
+
+const course = {
+  id:             courseApi.id,
+  title:          courseApi.title,
+  subtitle:       courseApi.subtitle ?? '',
+  code:           courseApi.code,
+  status:         courseApi.status.toUpperCase(),
+  bannerGradient: courseApi.bannerGradient ?? 'from-[#8B1A00] via-[#C0291A] to-[#E8402C]',
+};
+
+const announcementsApi = await getCourseAnnouncements(token, courseId).catch(() => []);
+
+const announcementsForClient = announcementsApi.map(a => ({
+  id: a.id,
+  title: a.title,
+  content: a.content ?? '',
+  isPinned: a.isPinned,
+  isPublished: a.isPublished,
+  publishedAt: a.publishedAt
+    ? new Date(a.publishedAt).toLocaleDateString('es-CO', { day: '2-digit', month: '2-digit', year: '2-digit', hour: '2-digit', minute: '2-digit' })
+    : new Date(a.createdAt).toLocaleDateString('es-CO', { day: '2-digit', month: '2-digit', year: '2-digit', hour: '2-digit', minute: '2-digit' }),
+}));
+
+const courseTabs = [
+  { label: 'Contenido',       icon: 'lucide:layout-list',  href: TEACHER_ROUTES.courseDetail(course.id),         active: false },
+  { label: 'Calendario',      icon: 'lucide:calendar',     href: TEACHER_ROUTES.courseCalendar(course.id),       active: false },
+  { label: 'Alumnos',         icon: 'lucide:users',        href: TEACHER_ROUTES.courseStudents(course.id),       active: false },
+  { label: 'Anuncios',        icon: 'lucide:megaphone',    href: TEACHER_ROUTES.courseAnnouncements(course.id),  active: true  },
+  { label: 'Calificaciones',  icon: 'lucide:book-marked',  href: TEACHER_ROUTES.courseGradebook(course.id),      active: false },
+];
+---
+
+<TeacherDashboardLayout
+  pageTitle={`Anuncios - ${course.title}`}
+  breadcrumb="Gestión de Anuncios"
+  activeNav="cursos"
+>
+  <div class="-mx-6 lg:-mx-8 -mt-6 lg:-mt-8 flex flex-col">
+
+    <!-- BANNER HERO -->
+    <div class={`relative w-full bg-gradient-to-r ${course.bannerGradient} overflow-hidden`}>
+      <div class="absolute inset-0 overflow-hidden pointer-events-none" aria-hidden="true">
+        <div class="absolute -right-16 -top-16 w-80 h-80 rounded-full bg-white/5 blur-3xl"></div>
+        <div class="absolute right-32 bottom-0 w-56 h-56 rounded-full bg-white/5 blur-2xl"></div>
+      </div>
+      <div class="relative z-10 px-8 lg:px-12 pt-8 pb-6">
+        <p class="text-white/60 text-xs font-semibold tracking-widest uppercase mb-2">{course.code}</p>
+        <div class="flex flex-col sm:flex-row sm:items-end justify-between gap-4">
+          <div>
+            <h1 class="text-3xl sm:text-4xl font-extrabold text-white tracking-tight mb-1 drop-shadow-sm">{course.title}</h1>
+            <p class="text-white/70 text-sm font-medium">{course.subtitle}</p>
+          </div>
+          <div class="flex items-center gap-3 self-start sm:self-end shrink-0">
+            <span class="border border-white/40 text-white text-xs font-extrabold px-4 py-1.5 rounded-full tracking-widest">{course.status}</span>
+            <button type="button" id="new-announcement-btn"
+              class="flex items-center gap-2 bg-white text-brand-dark text-xs font-extrabold px-4 py-1.5 rounded-full hover:bg-brand-soft transition-colors shadow-sm">
+              <Icon name="lucide:plus-circle" class="w-3.5 h-3.5" aria-hidden="true" /> Nuevo Anuncio
+            </button>
+          </div>
+        </div>
+      </div>
+      <nav aria-label="Secciones del curso" class="relative z-10 border-t border-white/10">
+        <div class="flex items-center overflow-x-auto px-6 lg:px-12">
+          {courseTabs.map(tab => (
+            <a href={tab.href} role="tab" aria-selected={tab.active}
+              class={['flex items-center gap-2 px-4 py-4 text-sm font-semibold whitespace-nowrap border-b-[3px] transition-all shrink-0',
+                tab.active ? 'border-white text-white' : 'border-transparent text-white/60 hover:text-white/90 hover:border-white/30'].join(' ')}>
+              <Icon name={tab.icon} class="w-4 h-4" aria-hidden="true" /> {tab.label}
+            </a>
+          ))}
+        </div>
+      </nav>
+    </div>
+
+    <!-- CUERPO PRINCIPAL -->
+    <div class="flex-1 bg-page px-6 lg:px-8 py-8">
+      <div class="max-w-[1200px] mx-auto flex flex-col gap-6">
+        <div class="flex items-center justify-between">
+          <span id="announcements-count" class="text-[0.82rem] font-medium text-subtle bg-neutral-subtle/50 px-3 py-1 rounded-md border border-edge-soft">
+            {announcementsForClient.length} anuncio{announcementsForClient.length !== 1 ? 's' : ''} publicado{announcementsForClient.length !== 1 ? 's' : ''}
+          </span>
+          <button type="button" id="new-announcement-body-btn"
+            class="flex items-center gap-2 bg-brand text-white text-xs font-bold px-4 py-2.5 rounded-xl hover:bg-brand-dark transition-colors">
+            <Icon name="lucide:plus-circle" class="w-3.5 h-3.5" aria-hidden="true" /> Nuevo Anuncio
+          </button>
+        </div>
+
+        <div class="bg-card rounded-2xl border border-edge shadow-sm overflow-hidden overflow-x-auto">
+          {announcementsForClient.length === 0 ? (
+            <div class="flex flex-col items-center justify-center py-16 gap-3">
+              <Icon name="lucide:megaphone" class="w-10 h-10 text-muted" aria-hidden="true" />
+              <p class="text-sm font-semibold text-subtle">Aún no hay anuncios en este curso.</p>
+              <button type="button" id="empty-new-btn"
+                class="mt-2 flex items-center gap-2 bg-brand text-white text-xs font-bold px-4 py-2.5 rounded-xl hover:bg-brand-dark transition-colors">
+                <Icon name="lucide:plus-circle" class="w-3.5 h-3.5" aria-hidden="true" /> Crear primer anuncio
+              </button>
+            </div>
+          ) : (
+            <table class="w-full text-left border-collapse min-w-[750px]">
+              <thead>
+                <tr class="border-b border-edge bg-neutral-bg/30">
+                  <th scope="col" class="py-4 px-6 text-[0.8rem] font-bold text-heading whitespace-nowrap w-[55%]">Anuncio</th>
+                  <th scope="col" class="py-4 px-6 text-[0.8rem] font-bold text-heading whitespace-nowrap">Publicación</th>
+                  <th scope="col" class="py-4 px-6 text-[0.8rem] font-bold text-heading whitespace-nowrap text-right">Acciones</th>
+                </tr>
+              </thead>
+              <tbody id="announcements-tbody" class="divide-y divide-edge-soft">
+                {announcementsForClient.map((row) => (
+                  <tr class="hover:bg-neutral-bg/40 transition-colors group announcement-row" data-id={row.id}>
+                    <td class="py-3 px-6">
+                      <button type="button"
+                        class="announcement-preview-btn flex items-start gap-4 w-full text-left focus:outline-none focus:ring-2 focus:ring-brand focus:ring-offset-2 rounded-lg p-2 -ml-2"
+                        data-id={row.id} aria-label={`Ver detalle: ${row.title}`}>
+                        <div class="flex items-center gap-1.5 shrink-0 mt-0.5">
+                          <Icon name="lucide:megaphone" class="w-[1.1rem] h-[1.1rem] text-subtle group-hover:text-brand-dark transition-colors" aria-hidden="true" />
+                        </div>
+                        <div class="flex flex-col min-w-0">
+                          <span class="text-[0.85rem] font-bold text-heading group-hover:text-brand-dark transition-colors">{row.title}</span>
+                          <span class="text-xs text-subtle font-medium mt-1 truncate max-w-xs announcement-snippet">
+                            {row.content.replace(/<[^>]*>/g, '').slice(0, 80)}{row.content.replace(/<[^>]*>/g, '').length > 80 ? '…' : ''}
+                          </span>
+                        </div>
+                      </button>
+                    </td>
+                    <td class="py-3 px-6 text-xs text-subtle font-medium whitespace-nowrap align-middle">{row.publishedAt}</td>
+                    <td class="py-3 px-6 align-middle">
+                      <div class="flex items-center justify-end gap-2">
+                        <button type="button"
+                          class="edit-announcement-btn flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-neutral-subtle text-subtle text-xs font-bold hover:bg-brand-soft hover:text-brand-dark transition-colors"
+                          data-id={row.id} data-title={row.title} data-content={row.content} aria-label={`Editar: ${row.title}`}>
+                          <Icon name="lucide:pencil" class="w-3.5 h-3.5" aria-hidden="true" /> Editar
+                        </button>
+                        <button type="button"
+                          class="delete-announcement-btn flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-danger-soft text-danger text-xs font-bold hover:bg-danger-soft hover:text-danger-dark transition-colors"
+                          data-id={row.id} aria-label={`Eliminar: ${row.title}`}>
+                          <Icon name="lucide:trash-2" class="w-3.5 h-3.5" aria-hidden="true" /> Eliminar
+                        </button>
+                      </div>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          )}
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- MODAL CREAR/EDITAR -->
+  <div id="announcement-editor-modal"
+    class="fixed inset-0 z-50 flex items-end sm:items-center justify-center opacity-0 pointer-events-none transition-opacity duration-300"
+    role="dialog" aria-modal="true" aria-labelledby="editor-modal-title">
+    <div id="editor-modal-backdrop" class="absolute inset-0 bg-black/50 backdrop-blur-sm cursor-pointer"></div>
+    <div id="editor-modal-panel"
+      class="relative bg-card w-full sm:w-[90%] sm:max-w-2xl max-h-[90vh] rounded-t-3xl sm:rounded-3xl shadow-2xl flex flex-col overflow-hidden transform translate-y-4 sm:scale-95 transition-transform duration-300 border border-edge">
+      <div class="px-6 py-5 border-b border-edge-soft flex items-center justify-between bg-neutral-bg/30 shrink-0">
+        <div class="flex items-center gap-3">
+          <div class="w-10 h-10 rounded-full bg-brand-soft flex items-center justify-center shrink-0">
+            <Icon name="lucide:megaphone" class="w-5 h-5 text-brand-dark" aria-hidden="true" />
+          </div>
+          <h2 id="editor-modal-title" class="text-lg font-extrabold text-heading">Nuevo Anuncio</h2>
+        </div>
+        <button id="close-editor-modal-btn" type="button"
+          class="p-2 rounded-full hover:bg-neutral-subtle text-subtle hover:text-heading transition-colors" aria-label="Cerrar editor">
+          <Icon name="lucide:x" class="w-5 h-5" aria-hidden="true" />
+        </button>
+      </div>
+      <div class="p-6 overflow-y-auto flex-1">
+        <input type="hidden" id="editing-announcement-id" value="" />
+        <div class="flex flex-col gap-5">
+          <div class="flex flex-col gap-1.5">
+            <label for="announcement-title-input" class="text-xs font-bold text-heading uppercase tracking-wider">
+              Título <span class="text-danger" aria-hidden="true">*</span>
+            </label>
+            <input type="text" id="announcement-title-input" placeholder="Ej: Semana 4 – Recursos interactivos"
+              class="w-full px-4 py-3 rounded-xl border border-edge bg-neutral-bg/30 text-sm text-heading font-medium placeholder:text-muted focus:outline-none focus:ring-2 focus:ring-brand focus:border-transparent transition" />
+          </div>
+          <div class="flex flex-col gap-1.5">
+            <label for="announcement-content-input" class="text-xs font-bold text-heading uppercase tracking-wider">
+              Contenido <span class="text-danger" aria-hidden="true">*</span>
+            </label>
+            <textarea id="announcement-content-input" rows={6} placeholder="Escribe el cuerpo del anuncio aquí..."
+              class="w-full px-4 py-3 rounded-xl border border-edge bg-neutral-bg/30 text-sm text-heading font-medium placeholder:text-muted focus:outline-none focus:ring-2 focus:ring-brand focus:border-transparent transition resize-none"></textarea>
+          </div>
+        </div>
+      </div>
+      <div class="px-6 py-4 border-t border-edge-soft flex items-center justify-between bg-neutral-bg/20 shrink-0">
+        <p class="text-xs text-subtle font-medium">Se publicará inmediatamente para todos los alumnos.</p>
+        <div class="flex items-center gap-3">
+          <button type="button" id="cancel-editor-btn"
+            class="px-5 py-2.5 rounded-xl border border-edge text-sm font-bold text-subtle hover:bg-neutral-subtle hover:text-heading transition-colors">Cancelar</button>
+          <button type="button" id="save-editor-btn"
+            class="flex items-center gap-2 px-6 py-2.5 rounded-xl bg-brand text-white text-sm font-bold hover:bg-brand-dark transition-colors shadow-sm">
+            <span id="save-editor-label">Publicar Anuncio</span>
+            <svg id="save-editor-spinner" xmlns="http://www.w3.org/2000/svg" class="w-4 h-4 animate-spin hidden" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 12a9 9 0 1 1-6.219-8.56"/></svg>
+          </button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- MODAL VISTA PREVIA -->
+  <div id="announcement-preview-modal"
+    class="fixed inset-0 z-50 flex items-center justify-center opacity-0 pointer-events-none transition-opacity duration-300">
+    <div id="preview-modal-backdrop" class="absolute inset-0 bg-black/50 backdrop-blur-sm cursor-pointer"></div>
+    <div id="preview-modal-panel"
+      class="relative bg-card w-[90%] max-w-2xl max-h-[85vh] rounded-3xl shadow-2xl flex flex-col overflow-hidden transform scale-95 transition-transform duration-300 border border-edge">
+      <div class="px-6 py-5 border-b border-edge-soft flex items-center justify-between bg-neutral-bg/30">
+        <div class="flex items-center gap-3">
+          <div class="w-10 h-10 rounded-full bg-brand-soft/20 flex items-center justify-center shrink-0 border border-brand/20">
+            <Icon name="lucide:megaphone" class="w-5 h-5 text-brand-dark" aria-hidden="true" />
+          </div>
+          <div>
+            <h3 id="preview-modal-title" class="text-lg font-extrabold text-heading">Título</h3>
+            <p id="preview-modal-date" class="text-xs font-semibold text-subtle mt-0.5">Fecha</p>
+          </div>
+        </div>
+        <button id="close-preview-modal-btn" type="button"
+          class="p-2 rounded-full hover:bg-neutral-subtle text-subtle hover:text-heading transition-colors" aria-label="Cerrar vista previa">
+          <Icon name="lucide:x" class="w-5 h-5" aria-hidden="true" />
+        </button>
+      </div>
+      <div class="p-6 overflow-y-auto">
+        <div id="preview-modal-content" class="text-sm text-body leading-relaxed space-y-4 prose prose-sm max-w-none"></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Toast -->
+  <div id="ann-toast"
+    class="fixed bottom-6 right-6 z-[60] flex items-center gap-3 bg-heading text-white px-5 py-4 rounded-2xl shadow-2xl translate-y-20 opacity-0 transition-all duration-500 pointer-events-none"
+    role="status" aria-live="polite">
+    <div id="ann-toast-icon" class="w-7 h-7 rounded-full bg-success flex items-center justify-center flex-shrink-0 text-xs font-black">✓</div>
+    <p id="ann-toast-text" class="text-sm font-extrabold"></p>
+  </div>
+
+<script define:vars={{ courseId, announcementsForClient, API_URL }}>
+  const API_BASE = API_URL;
+
+  function getToken() {
+    const tokenMatch = document.cookie.match(/(?:^|; )ka_session=([^;]*)/);
+    return tokenMatch ? tokenMatch[1] : '';
+  }
+
+  // Cache local iniciado con datos SSR — no requiere JSON.parse
+  let localAnnouncements = [...announcementsForClient];
+
+  function showToast(msg, success = true) {
+    const toast = document.getElementById('ann-toast');
+    const icon  = document.getElementById('ann-toast-icon');
+    const text  = document.getElementById('ann-toast-text');
+    if (!toast || !icon || !text) return;
+    text.textContent = msg;
+    icon.className = `w-7 h-7 rounded-full flex items-center justify-center flex-shrink-0 text-xs font-black ${success ? 'bg-success' : 'bg-danger'}`;
+    icon.textContent = success ? '✓' : '✕';
+    toast.classList.remove('translate-y-20','opacity-0','pointer-events-none');
+    toast.classList.add('translate-y-0','opacity-100');
+    setTimeout(() => {
+      toast.classList.add('translate-y-20','opacity-0','pointer-events-none');
+      toast.classList.remove('translate-y-0','opacity-100');
+    }, 3500);
+  }
+
+  // ── MODAL EDITOR ──────────────────────────────────────────────
+  const editorModal    = document.getElementById('announcement-editor-modal');
+  const editorBackdrop = document.getElementById('editor-modal-backdrop');
+  const editorPanel    = document.getElementById('editor-modal-panel');
+  const editorTitle    = document.getElementById('editor-modal-title');
+  const editingIdField = document.getElementById('editing-announcement-id');
+  const titleInput     = document.getElementById('announcement-title-input');
+  const contentInput   = document.getElementById('announcement-content-input');
+  const saveEditorBtn  = document.getElementById('save-editor-btn');
+  const saveEditorLbl  = document.getElementById('save-editor-label');
+  const saveEditorSpin = document.getElementById('save-editor-spinner');
+
+  function openEditor(mode, data) {
+    if (!editorModal || !editorPanel || !editorTitle) return;
+    editingIdField.value = mode === 'edit' ? (data?.id ?? '') : '';
+    editorTitle.textContent = mode === 'create' ? 'Nuevo Anuncio' : `Editar: ${data?.title ?? 'Anuncio'}`;
+    titleInput.value   = mode === 'edit' ? (data?.title ?? '') : '';
+    contentInput.value = mode === 'edit' ? (data?.content ?? '').replace(/<[^>]*>/g, '') : '';
+    editorModal.classList.remove('opacity-0','pointer-events-none');
+    editorPanel.classList.remove('translate-y-4','sm:scale-95');
+    document.body.style.overflow = 'hidden';
+  }
+
+  function closeEditor() {
+    editorModal?.classList.add('opacity-0','pointer-events-none');
+    editorPanel?.classList.add('translate-y-4','sm:scale-95');
+    document.body.style.overflow = '';
+  }
+
+  document.getElementById('new-announcement-btn')?.addEventListener('click', () => openEditor('create'));
+  document.getElementById('new-announcement-body-btn')?.addEventListener('click', () => openEditor('create'));
+  document.getElementById('empty-new-btn')?.addEventListener('click', () => openEditor('create'));
+  document.getElementById('close-editor-modal-btn')?.addEventListener('click', closeEditor);
+  document.getElementById('cancel-editor-btn')?.addEventListener('click', closeEditor);
+  editorBackdrop?.addEventListener('click', closeEditor);
+
+  function bindEditBtns() {
+    document.querySelectorAll('.edit-announcement-btn').forEach(btn => {
+      btn.addEventListener('click', () => openEditor('edit', {
+        id:      btn.dataset.id ?? '',
+        title:   btn.dataset.title ?? '',
+        content: btn.dataset.content ?? '',
+      }));
+    });
+  }
+  bindEditBtns();
+
+  // ── Guardar ───────────────────────────────────────────────────
+  saveEditorBtn?.addEventListener('click', async () => {
+    const title   = titleInput.value.trim();
+    const content = contentInput.value.trim();
+    if (!title)   { titleInput.classList.add('ring-2','ring-red-400','border-red-400'); titleInput.focus(); return; }
+    if (!content) { contentInput.classList.add('ring-2','ring-red-400','border-red-400'); contentInput.focus(); return; }
+    [titleInput, contentInput].forEach(el => el.classList.remove('ring-2','ring-red-400','border-red-400'));
+
+    saveEditorBtn.disabled = true;
+    saveEditorLbl.classList.add('hidden');
+    saveEditorSpin.classList.remove('hidden');
+
+    const editingId = editingIdField.value;
+    const token     = getToken();
+    try {
+      const url    = editingId
+        ? `${API_BASE}/courses/${courseId}/announcements/${editingId}`
+        : `${API_BASE}/courses/${courseId}/announcements`;
+      const method = editingId ? 'PATCH' : 'POST';
+
+      const res = await fetch(url, {
+        method,
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+        body: JSON.stringify({ title, content }),
+      });
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+
+      const json  = await res.json();
+      const saved = json.data ?? json;
+      const dateStr = new Date(saved.publishedAt ?? saved.createdAt).toLocaleDateString('es-CO', {
+        day: '2-digit', month: '2-digit', year: '2-digit', hour: '2-digit', minute: '2-digit',
+      });
+
+      if (editingId) {
+        const idx = localAnnouncements.findIndex(a => a.id === editingId);
+        if (idx !== -1) localAnnouncements[idx] = { ...localAnnouncements[idx], title: saved.title, content: saved.content };
+        const row = document.querySelector(`.announcement-row[data-id="${editingId}"]`);
+        if (row) {
+          const titleEl   = row.querySelector('.announcement-preview-btn .flex.flex-col span:first-child');
+          const snippetEl = row.querySelector('.announcement-snippet');
+          if (titleEl)   titleEl.textContent = saved.title;
+          if (snippetEl) snippetEl.textContent = (saved.content || '').replace(/<[^>]*>/g, '').slice(0, 80) + ((saved.content || '').length > 80 ? '…' : '');
+          const editBtn = row.querySelector('.edit-announcement-btn');
+          if (editBtn) { editBtn.dataset.title = saved.title; editBtn.dataset.content = saved.content; }
+        }
+        showToast('✓ Anuncio actualizado');
+      } else {
+        localAnnouncements.unshift({ id: saved.id, title: saved.title, content: saved.content, isPinned: false, isPublished: true, publishedAt: dateStr });
+        const tbody = document.getElementById('announcements-tbody');
+        if (tbody) {
+          const tr = document.createElement('tr');
+          tr.className = 'hover:bg-neutral-bg/40 transition-colors group announcement-row';
+          tr.dataset.id = saved.id;
+          const safeContent = (saved.content ?? '').replace(/<[^>]*>/g, '');
+          tr.innerHTML = `
+            <td class="py-3 px-6">
+              <button type="button" class="announcement-preview-btn flex items-start gap-4 w-full text-left rounded-lg p-2 -ml-2" data-id="${saved.id}">
+                <div class="flex flex-col min-w-0">
+                  <span class="text-[0.85rem] font-bold text-heading">${saved.title}</span>
+                  <span class="text-xs text-subtle font-medium mt-1 truncate max-w-xs announcement-snippet">${safeContent.slice(0,80)}${safeContent.length>80?'…':''}</span>
+                </div>
+              </button>
+            </td>
+            <td class="py-3 px-6 text-xs text-subtle font-medium whitespace-nowrap align-middle">${dateStr}</td>
+            <td class="py-3 px-6 align-middle">
+              <div class="flex items-center justify-end gap-2">
+                <button type="button" class="edit-announcement-btn px-3 py-1.5 rounded-lg bg-neutral-subtle text-subtle text-xs font-bold hover:bg-brand-soft hover:text-brand-dark transition-colors"
+                  data-id="${saved.id}" data-title="${saved.title.replace(/"/g,'&quot;')}" data-content="${(saved.content||'').replace(/"/g,'&quot;')}">✏ Editar</button>
+                <button type="button" class="delete-announcement-btn px-3 py-1.5 rounded-lg bg-danger-soft text-danger text-xs font-bold hover:bg-danger-soft transition-colors"
+                  data-id="${saved.id}">🗑 Eliminar</button>
+              </div>
+            </td>`;
+          tbody.prepend(tr);
+          bindPreviewBtns(); bindEditBtns(); bindDeleteBtns();
+        }
+        const countEl = document.getElementById('announcements-count');
+        if (countEl) countEl.textContent = `${localAnnouncements.length} anuncio${localAnnouncements.length!==1?'s':''} publicado${localAnnouncements.length!==1?'s':''}`;
+        showToast('✓ Anuncio publicado correctamente');
+      }
+      closeEditor();
+    } catch (err) {
+      console.error('Error guardando anuncio:', err);
+      showToast('Error al guardar el anuncio.', false);
+    } finally {
+      saveEditorBtn.disabled = false;
+      saveEditorLbl.classList.remove('hidden');
+      saveEditorSpin.classList.add('hidden');
+    }
+  });
+
+  // ── MODAL VISTA PREVIA ────────────────────────────────────────
+  const previewModal    = document.getElementById('announcement-preview-modal');
+  const previewBackdrop = document.getElementById('preview-modal-backdrop');
+  const previewPanel    = document.getElementById('preview-modal-panel');
+  const previewTitle    = document.getElementById('preview-modal-title');
+  const previewDate     = document.getElementById('preview-modal-date');
+  const previewContent  = document.getElementById('preview-modal-content');
+
+  function openPreview(id) {
+    const ann = localAnnouncements.find(a => a.id === id);
+    if (!ann || !previewModal || !previewPanel) return;
+    if (previewTitle)  previewTitle.textContent = ann.title;
+    if (previewDate)   previewDate.textContent  = `Publicado el ${ann.publishedAt}`;
+    if (previewContent) previewContent.innerHTML = ann.content;
+    previewModal.classList.remove('opacity-0','pointer-events-none');
+    previewPanel.classList.remove('scale-95');
+    previewPanel.classList.add('scale-100');
+    document.body.style.overflow = 'hidden';
+  }
+
+  function closePreview() {
+    previewModal?.classList.add('opacity-0','pointer-events-none');
+    previewPanel?.classList.remove('scale-100');
+    previewPanel?.classList.add('scale-95');
+    document.body.style.overflow = '';
+  }
+
+  function bindPreviewBtns() {
+    document.querySelectorAll('.announcement-preview-btn').forEach(btn => {
+      btn.addEventListener('click', () => openPreview(btn.dataset.id ?? ''));
+    });
+  }
+  bindPreviewBtns();
+
+  document.getElementById('close-preview-modal-btn')?.addEventListener('click', closePreview);
+  previewBackdrop?.addEventListener('click', closePreview);
+
+  // ── ELIMINAR ──────────────────────────────────────────────────
+  function bindDeleteBtns() {
+    document.querySelectorAll('.delete-announcement-btn').forEach(btn => {
+      btn.addEventListener('click', () => {
+        const annId = btn.dataset.id ?? '';
+        if (!annId) return;
+        const annTitle = btn.closest('.announcement-row')?.querySelector('.announcement-title')?.textContent?.trim() || 'este anuncio';
+        window.openDeleteModal('delete-announce-modal', annTitle, async () => {
+          const token = getToken();
+          const res = await fetch(`${API_BASE}/courses/${courseId}/announcements/${annId}`, {
+            method: 'DELETE',
+            headers: { Authorization: `Bearer ${token}` },
+          });
+          if (!res.ok && res.status !== 204) throw new Error(`HTTP ${res.status}`);
+          localAnnouncements = localAnnouncements.filter(a => a.id !== annId);
+          const row = document.querySelector(`.announcement-row[data-id="${annId}"]`);
+          if (row) {
+            Object.assign((row as HTMLElement).style, { transition: 'opacity 0.3s, transform 0.3s', opacity: '0', transform: 'translateX(20px)' });
+            setTimeout(() => row.remove(), 300);
+          }
+          const countEl = document.getElementById('announcements-count');
+          if (countEl) countEl.textContent = `${localAnnouncements.length} anuncio${localAnnouncements.length!==1?'s':''} publicado${localAnnouncements.length!==1?'s':''}`;
+          showToast('Anuncio eliminado', false);
+        });
+      });
+    });
+  }
+  bindDeleteBtns();
+
+  // Escape
+  document.addEventListener('keydown', e => {
+    if (e.key !== 'Escape') return;
+    if (!editorModal?.classList.contains('opacity-0'))  closeEditor();
+    if (!previewModal?.classList.contains('opacity-0')) closePreview();
+  });
+</script>
+
+<DeleteConfirmModal
+  modalId="delete-announce-modal"
+  title="Eliminar Anuncio"
+  description="El anuncio será eliminado permanentemente del curso y no podrá recuperarse."
+/>
+
+</TeacherDashboardLayout>

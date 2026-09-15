@@ -1,0 +1,57 @@
+---
+import { Icon } from 'astro-icon/components';
+
+interface Props {
+  breadcrumb?: string;
+  userName?: string;
+  userLevel?: string;
+  avatarSrc?: string;
+}
+
+const {
+  breadcrumb = 'Dashboard Estudiantil',
+  userName = 'Estudiante Kelly',
+  userLevel = 'Nivel Intermedio B2',
+  avatarSrc, // En el mockup hay una foto, simularemos si no llega.
+} = Astro.props;
+
+const userInitials = userName.split(' ').map((w) => w[0] ?? '').join('').slice(0, 2).toUpperCase();
+
+// Fallback de avatar para que se parezca al mockup
+const finalAvatarSrc = avatarSrc || "https://i.pinimg.com/736x/fb/f9/62/fbf962d2260047e6075b7a6cb38374e2.jpg"; 
+---
+
+<header class="flex items-center justify-between px-6 lg:px-8 py-3 bg-transparent flex-shrink-0">
+
+  <nav aria-label="Breadcrumb" class="flex items-center gap-2 text-sm text-subtle font-semibold">
+    <span>LMS</span>
+    <Icon name="lucide:chevron-right" class="w-3.5 h-3.5" aria-hidden="true" />
+    <span class="text-heading">{breadcrumb}</span>
+  </nav>
+
+  <div class="flex items-center gap-6">
+    <div class="flex items-center gap-2">
+      <span class="text-sm font-bold text-heading hidden sm:block">Tareas</span>
+      <button type="button" aria-label="Ver notificaciones"
+        class="relative p-2 text-subtle hover:text-brand transition-colors">
+        <Icon name="lucide:bell" class="w-5 h-5 text-heading" />
+        <span class="absolute top-0 right-0 w-4 h-4 bg-danger-soft text-danger-dark text-[10px] font-bold flex items-center justify-center rounded-full border-2 border-white">
+          3
+        </span>
+      </button>
+      <a href="/configuracion" aria-label="Configuración" class="p-2 text-subtle hover:text-brand transition-colors">
+        <Icon name="lucide:settings" class="w-5 h-5 text-heading" />
+      </a>
+    </div>
+
+    <div class="flex items-center gap-3">
+      <div class="text-right hidden sm:block">
+        <p class="text-sm font-bold text-heading leading-tight">{userName}</p>
+        <p class="text-[11px] text-subtle font-medium">{userLevel}</p>
+      </div>
+      <img src={finalAvatarSrc} alt={`Foto de ${userName}`} width="40" height="40"
+          class="w-10 h-10 rounded-full object-cover shadow-sm" />
+    </div>
+  </div>
+
+</header>

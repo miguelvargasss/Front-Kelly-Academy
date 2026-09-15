@@ -1,0 +1,61 @@
+---
+import Badge from '../../components/ui/Badge.astro';
+import ProgressBar from '../../components/ui/ProgressBar.astro';
+import Button from '../../components/ui/Button.astro';
+import { Icon } from 'astro-icon/components';
+
+interface Props {
+  courseTitle: string;
+  currentUnit: string;
+  levelLabel: string;
+  levelVariant?: 'default' | 'primary' | 'success' | 'warning' | 'danger' | 'muted';
+  progressPercent: number;
+  nextClassLabel?: string;
+  courseHref: string;
+  isLocked?: boolean;
+  lockReason?: string;
+}
+
+const { courseTitle, currentUnit, levelLabel, levelVariant = 'primary', progressPercent, nextClassLabel, courseHref, isLocked = false, lockReason } = Astro.props;
+---
+
+<article class={`rounded-xl border flex flex-col overflow-hidden transition-shadow duration-200 ${isLocked ? 'border-edge opacity-75' : 'border-edge hover:shadow-md'}`}>
+
+  <div class={`h-32 flex items-start justify-between p-3 ${isLocked ? 'bg-neutral-subtle' : 'bg-brand-soft'}`}>
+    <Badge label={levelLabel} variant={isLocked ? 'muted' : levelVariant} />
+    {isLocked && (
+      <div class="flex items-center gap-1 text-xs text-muted">
+        <Icon name="lucide:lock" class="w-3.5 h-3.5" aria-hidden="true" />
+        <span>Bloqueado</span>
+      </div>
+    )}
+  </div>
+
+  <div class="bg-card p-4 flex flex-col gap-3 flex-1">
+    <div>
+      <h3 class="text-base font-bold text-heading">{courseTitle}</h3>
+      <p class="text-sm text-subtle mt-0.5 line-clamp-2">{currentUnit}</p>
+    </div>
+
+    <div>
+      <div class="flex items-center justify-between mb-1.5">
+        <span class="text-xs text-subtle">Progreso</span>
+      </div>
+      <ProgressBar value={progressPercent} showLabel={true} colorClass={isLocked ? 'bg-neutral-base' : 'bg-brand'} />
+    </div>
+
+    {nextClassLabel && !isLocked && (
+      <div class="flex items-center gap-1.5 text-xs text-subtle bg-neutral-bg rounded-md px-2.5 py-1.5">
+        <Icon name="lucide:clock" class="w-3.5 h-3.5 flex-shrink-0" aria-hidden="true" />
+        <span>{nextClassLabel}</span>
+      </div>
+    )}
+
+    {lockReason && isLocked && <p class="text-xs text-muted">{lockReason}</p>}
+
+    <Button variant={isLocked ? 'ghost' : 'primary'} href={isLocked ? undefined : courseHref}
+      disabled={isLocked} class="w-full justify-center mt-auto">
+      {isLocked ? 'No Disponible' : 'Continuar'}
+    </Button>
+  </div>
+</article>

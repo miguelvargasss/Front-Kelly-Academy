@@ -1,0 +1,28 @@
+---
+import { Icon } from 'astro-icon/components';
+import Button from '../../components/ui/Button.astro';
+
+interface Props {
+  time: string;
+  courseTitle: string;
+  roomLabel: string;
+  joinHref: string;
+}
+
+const { time, courseTitle, roomLabel, joinHref } = Astro.props;
+---
+
+<aside class="bg-card rounded-xl p-5 flex flex-col gap-3 border border-edge">
+  <p class="text-xs font-semibold uppercase tracking-wider text-subtle">Próxima Clase</p>
+  <p class="text-3xl font-bold text-brand">{time}</p>
+  <div>
+    <p class="text-base font-bold text-heading leading-snug">{courseTitle}</p>
+    <div class="flex items-center gap-1.5 mt-1 text-sm text-subtle">
+      <Icon name="lucide:monitor" class="w-3.5 h-3.5 flex-shrink-0" aria-hidden="true" />
+      <span>{roomLabel}</span>
+    </div>
+  </div>
+  <Button variant="outline" href={joinHref} class="w-full justify-center mt-1">
+    Unirse a la clase
+  </Button>
+</aside>

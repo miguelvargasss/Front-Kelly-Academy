@@ -1,0 +1,43 @@
+---
+import { cva } from 'class-variance-authority';
+
+interface Props {
+  variant?: 'primary' | 'outline' | 'ghost' | 'danger';
+  size?: 'sm' | 'md' | 'lg';
+  href?: string;
+  type?: 'button' | 'submit' | 'reset';
+  disabled?: boolean;
+  class?: string;
+  ariaLabel?: string;
+}
+
+const { variant = 'primary', size = 'md', href, type = 'button', disabled = false, class: extraClass = '', ariaLabel } = Astro.props;
+
+const buttonVariants = cva(
+  'inline-flex items-center justify-center gap-2 font-semibold rounded-lg transition-all duration-150 focus-visible:outline-2 focus-visible:outline-offset-2 disabled:opacity-50 disabled:cursor-not-allowed',
+  {
+    variants: {
+      variant: {
+        primary: 'bg-brand text-white hover:bg-brand-dark focus-visible:outline-brand-primary',
+        outline: 'border border-brand text-brand hover:bg-brand-soft focus-visible:outline-brand-primary',
+        ghost:   'text-subtle hover:bg-neutral-subtle focus-visible:outline-muted',
+        danger:  'bg-danger-dark text-white hover:bg-danger-dark focus-visible:outline-danger-dark',
+      },
+      size: {
+        sm: 'px-3 py-1.5 text-xs',
+        md: 'px-4 py-2 text-sm',
+        lg: 'px-5 py-2.5 text-base',
+      },
+    },
+    defaultVariants: { variant: 'primary', size: 'md' },
+  }
+);
+
+const computedClass = buttonVariants({ variant, size }) + ' ' + extraClass;
+---
+
+{href ? (
+  <a href={href} class={computedClass} aria-label={ariaLabel}><slot /></a>
+) : (
+  <button type={type} disabled={disabled} class={computedClass} aria-label={ariaLabel}><slot /></button>
+)}

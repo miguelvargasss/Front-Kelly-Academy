@@ -1,0 +1,183 @@
+---
+/**
+ * estudiante/index.astro — Dashboard Estudiantil
+ * ─────────────────────────────────────────────────────────────────
+ * Portal principal del alumno. Solo accesible con rol=estudiante.
+ * El middleware y la raíz (/) redirigen aquí cuando el rol es correcto.
+ */
+import DashboardLayout from '../../layouts/DashboardLayout.astro';
+import { Icon } from 'astro-icon/components';
+import { APP_ROUTES } from '../../core/config/paths';
+import { getMyCourses, getClasses } from '../../core/services/api';
+import type { CourseEnrollment, ClassSession } from '../../core/types/api.types';
+
+export const prerender = false;
+
+const token = Astro.cookies.get('ka_session')?.value ?? '';
+
+let myCourses: CourseEnrollment[] = [];
+let upcomingClasses: ClassSession[] = [];
+
+try {
+  const [coursesData, classesData] = await Promise.all([
+    getMyCourses(token),
+    getClasses(token, 1, 5) // Fetch upcoming 5 classes
+  ]);
+  myCourses = coursesData || [];
+  upcomingClasses = classesData?.classes || [];
+} catch (error) {
+  console.error('Error fetching student dashboard data:', error);
+}
+---
+
+<DashboardLayout pageTitle="Inicio" breadcrumb="Dashboard Estudiantil" activeNav="inicio">
+
+  <div class="max-w-7xl mx-auto grid grid-cols-1 lg:grid-cols-[1fr_320px] gap-8 items-start">
+
+    <!-- Columna Izquierda (Principal) -->
+    <div class="flex flex-col gap-8">
+      
+      <!-- Clases Próximas -->
+      <section aria-labelledby="clases-proximas-heading" class="bg-brand-soft/50 rounded-[2rem] p-6 sm:p-8">
+        <div class="flex items-start sm:items-center justify-between mb-6 flex-col sm:flex-row gap-3">
+          <div>
+            <h1 id="clases-proximas-heading" class="text-3xl font-extrabold text-heading">
+              Clases Próximas
+            </h1>
+            <p class="text-sm text-subtle mt-1 font-medium">
+              Tu horario para los próximos 7 días.
+            </p>
+          </div>
+        </div>
+
+        <div class="flex flex-col gap-4">
+          {upcomingClasses.length === 0 ? (
+            <p class="text-sm text-subtle italic">No tienes clases próximas programadas.</p>
+          ) : upcomingClasses.map((cls) => {
+            const date = new Date(cls.scheduledDate);
+            const isToday = date.toDateString() === new Date().toDateString();
+            const dayLabel = isToday ? 'HOY' : date.toLocaleDateString('es-ES', { weekday: 'short' }).toUpperCase();
+            
+            return (
+              <article class="bg-card rounded-2xl p-4 flex flex-col sm:flex-row items-center gap-4 sm:gap-6 shadow-sm">
+                <div class={`${isToday ? 'bg-brand-soft/60' : 'bg-neutral-subtle'} rounded-xl px-4 py-3 text-center min-w-[80px] flex-shrink-0`}>
+                  <p class={`${isToday ? 'text-brand' : 'text-subtle'} font-bold text-xs tracking-wider mb-0.5`}>{dayLabel}</p>
+                  <p class="text-heading font-extrabold text-2xl leading-none">
+                    {date.toLocaleTimeString('es-ES', { hour: '2-digit', minute: '2-digit' })}
+                  </p>
+                </div>
+                
+                <div class="flex-1 min-w-0 text-center sm:text-left">
+                  <h3 class="text-xl font-extrabold text-heading truncate">{cls.title}</h3>
+                  <div class="flex items-center justify-center sm:justify-start gap-4 mt-1.5 text-sm text-subtle font-medium">
+                    <span class="flex items-center gap-1.5">
+                      <Icon name="lucide:clock" class="w-4 h-4" /> {cls.durationMinutes} min
+                    </span>
+                  </div>
+                </div>
+
+                {isToday ? (
+                  <a href={cls.joinUrl ?? '#'} class="bg-brand-dark hover:bg-brand text-white font-bold text-sm px-5 py-3 rounded-xl flex items-center gap-2 transition-colors w-full sm:w-auto justify-center flex-shrink-0">
+                    <Icon name="lucide:video" class="w-4 h-4" />
+                    Unirse a Clase
+                  </a>
+                ) : (
+                  <div class="px-5 py-3 font-bold text-brand-dark text-sm flex-shrink-0 w-full sm:w-auto text-center">
+                    Programada
+                  </div>
+                )}
+              </article>
+            );
+          })}
+        </div>
+      </section>
+
+      <!-- Mis Cursos -->
+      <section aria-labelledby="mis-cursos-heading">
+        <div class="flex items-center gap-2.5 mb-6">
+          <div class="bg-brand text-white p-1.5 rounded-lg">
+            <Icon name="lucide:book-open" class="w-5 h-5" />
+          </div>
+          <h2 id="mis-cursos-heading" class="text-2xl font-extrabold text-heading">
+            Mis Cursos
+          </h2>
+        </div>
+
+        <div class="grid grid-cols-1 sm:grid-cols-2 gap-6">
+          {myCourses.length === 0 ? (
+            <p class="text-sm text-subtle italic">Aún no estás inscrito en ningún curso.</p>
+          ) : myCourses.map((enrollment) => (
+            <a href={APP_ROUTES.courseDetail(enrollment.courseId)} class="bg-brand-soft/40 rounded-3xl overflow-hidden flex flex-col relative group cursor-pointer border border-transparent hover:border-brand/20 transition-colors no-underline">
+              <div class="h-40 bg-gradient-to-b from-black/40 to-black/80 relative p-4 flex flex-col justify-end">
+                <div class="flex items-end justify-between relative z-10 w-full">
+                  <span class="bg-white text-heading text-xs font-bold px-3 py-1.5 rounded-md">
+                    {enrollment.course?.level || 'Nivel Básico'}
+                  </span>
+                  <span class="text-white text-sm font-bold shadow-sm">
+                    {Math.round(enrollment.progress || 0)}% Completado
+                  </span>
+                </div>
+              </div>
+              
+              <div class="p-6 flex-1 flex flex-col">
+                <h3 class="text-xl font-extrabold text-heading leading-tight mb-3">
+                  {enrollment.course?.title}
+                </h3>
+                <p class="text-sm text-subtle font-medium line-clamp-2 mb-6">
+                  {enrollment.course?.description}
+                </p>
+                
+                <div class="mt-auto">
+                  <div class="h-2 bg-white rounded-full overflow-hidden mb-3">
+                    <div class="h-full bg-brand-dark rounded-full" style={`width: ${enrollment.progress || 0}%;`}></div>
+                  </div>
+                  <div class="flex items-center justify-between">
+                    <span class="text-xs text-subtle font-semibold">Continuar Aprendizaje</span>
+                    <span class="text-xs text-heading font-bold flex items-center gap-1 group-hover:text-brand transition-colors">
+                      Entrar <Icon name="lucide:chevron-right" class="w-3.5 h-3.5" />
+                    </span>
+                  </div>
+                </div>
+              </div>
+            </a>
+          ))}
+        </div>
+      </section>
+
+    </div>
+
+    <!-- Columna Derecha (Lateral) -->
+    <aside class="flex flex-col gap-8">
+      
+      <!-- Pendientes -->
+      <section aria-labelledby="pendientes-heading">
+        <h2 id="pendientes-heading" class="text-2xl font-extrabold text-heading mb-6">
+          Pendientes
+        </h2>
+        
+        <div class="flex flex-col gap-4">
+          <p class="text-sm text-subtle italic">No tienes tareas pendientes por ahora.</p>
+        </div>
+      </section>
+
+      <!-- Anuncios de Profesores -->
+      <section class="bg-[#e64a19] rounded-[2rem] p-6 sm:p-8 text-white shadow-lg overflow-hidden relative">
+        <div class="absolute top-0 right-0 w-32 h-32 bg-white/5 rounded-full -mr-10 -mt-10 blur-2xl"></div>
+
+        <div class="flex items-start gap-4 mb-6 relative z-10">
+          <Icon name="lucide:megaphone" class="w-7 h-7 flex-shrink-0" />
+          <h2 class="text-2xl font-extrabold leading-tight">
+            Anuncios de<br/>Profesores
+          </h2>
+        </div>
+
+        <p class="text-sm font-medium text-white/80 leading-relaxed relative z-10 italic">
+          Aún no hay anuncios recientes.
+        </p>
+      </section>
+
+    </aside>
+
+  </div>
+
+</DashboardLayout>

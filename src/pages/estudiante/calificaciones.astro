@@ -1,0 +1,140 @@
+---
+/**
+ * estudiante/calificaciones.astro — Mis Calificaciones
+ * Muestra las calificaciones del estudiante conectadas al endpoint /grades/my
+ */
+import DashboardLayout from '../../layouts/DashboardLayout.astro';
+import { Icon } from 'astro-icon/components';
+import { getMyGrades } from '../../core/services/api';
+import type { Grade } from '../../core/types/api.types';
+
+export const prerender = false;
+
+const token = Astro.cookies.get('ka_session')?.value ?? '';
+let grades: Grade[] = [];
+let fetchError = false;
+
+try {
+  const data = await getMyGrades(token);
+  grades = Array.isArray(data) ? data : (data?.grades ?? []);
+} catch (error: any) {
+  if (error?.statusCode === 401) return Astro.redirect('/logout');
+  fetchError = true;
+  console.error('Error fetching grades:', error);
+}
+
+// Calcular promedio general
+const average = grades.length > 0
+  ? Math.round((grades.reduce((acc: number, g: Grade) => acc + ((g.score / g.maxScore) * 100), 0) / grades.length))
+  : 0;
+---
+
+<DashboardLayout pageTitle="Mis Calificaciones" breadcrumb="Calificaciones" activeNav="calificaciones">
+  <div class="max-w-5xl mx-auto flex flex-col gap-8">
+
+    <!-- Encabezado -->
+    <div class="flex items-center gap-3">
+      <div class="bg-brand text-white p-2 rounded-xl">
+        <Icon name="lucide:star" class="w-6 h-6" />
+      </div>
+      <div>
+        <h1 class="text-3xl font-extrabold text-heading">Mis Calificaciones</h1>
+        <p class="text-sm text-subtle font-medium mt-0.5">Historial de evaluaciones y actividades calificadas</p>
+      </div>
+    </div>
+
+    {fetchError ? (
+      <div class="bg-danger-soft border border-danger/20 rounded-2xl p-6 text-center">
+        <Icon name="lucide:alert-circle" class="w-8 h-8 text-danger mx-auto mb-2" />
+        <p class="text-sm font-semibold text-danger-dark">No se pudieron cargar las calificaciones. Intenta recargar la página.</p>
+      </div>
+    ) : grades.length === 0 ? (
+      <div class="bg-card border border-edge rounded-3xl p-12 text-center">
+        <Icon name="lucide:graduation-cap" class="w-12 h-12 text-subtle mx-auto mb-4" />
+        <h2 class="text-xl font-extrabold text-heading mb-2">Sin calificaciones aún</h2>
+        <p class="text-subtle text-sm">Tus calificaciones aparecerán aquí una vez que tus actividades sean revisadas.</p>
+      </div>
+    ) : (
+      <div class="flex flex-col gap-6">
+
+        <!-- Resumen general -->
+        <div class="grid grid-cols-1 sm:grid-cols-3 gap-4">
+          <div class="bg-brand-soft/40 rounded-2xl p-5 flex items-center gap-4">
+            <div class="w-12 h-12 bg-brand text-white rounded-xl flex items-center justify-center shrink-0">
+              <Icon name="lucide:trending-up" class="w-6 h-6" />
+            </div>
+            <div>
+              <p class="text-xs text-subtle font-semibold uppercase tracking-wide">Promedio general</p>
+              <p class="text-2xl font-extrabold text-heading">{average}%</p>
+            </div>
+          </div>
+          <div class="bg-card border border-edge rounded-2xl p-5 flex items-center gap-4">
+            <div class="w-12 h-12 bg-neutral-subtle rounded-xl flex items-center justify-center shrink-0">
+              <Icon name="lucide:clipboard-check" class="w-6 h-6 text-subtle" />
+            </div>
+            <div>
+              <p class="text-xs text-subtle font-semibold uppercase tracking-wide">Actividades calificadas</p>
+              <p class="text-2xl font-extrabold text-heading">{grades.length}</p>
+            </div>
+          </div>
+          <div class="bg-card border border-edge rounded-2xl p-5 flex items-center gap-4">
+            <div class="w-12 h-12 bg-success-soft rounded-xl flex items-center justify-center shrink-0">
+              <Icon name="lucide:award" class="w-6 h-6 text-success-dark" />
+            </div>
+            <div>
+              <p class="text-xs text-subtle font-semibold uppercase tracking-wide">Mejor nota</p>
+              <p class="text-2xl font-extrabold text-heading">
+                {grades.length > 0 ? Math.round(Math.max(...grades.map((g: Grade) => (g.score / g.maxScore) * 100))) + '%' : '—'}
+              </p>
+            </div>
+          </div>
+        </div>
+
+        <!-- Tabla de calificaciones -->
+        <div class="bg-card border border-edge rounded-2xl overflow-hidden">
+          <div class="px-6 py-4 border-b border-edge-soft">
+            <h2 class="text-sm font-extrabold text-heading uppercase tracking-wider">Detalle de Calificaciones</h2>
+          </div>
+          <div class="divide-y divide-edge-soft">
+            {grades.map((grade: Grade) => {
+              const percentage = Math.round((grade.score / grade.maxScore) * 100);
+              const isGood = percentage >= 70;
+              const isExcellent = percentage >= 90;
+              return (
+                <div class="flex items-center gap-4 px-6 py-4 hover:bg-neutral-bg/40 transition-colors">
+                  <div class={`w-10 h-10 rounded-xl flex items-center justify-center shrink-0 font-extrabold text-sm ${
+                    isExcellent ? 'bg-success-soft text-success-dark' :
+                    isGood ? 'bg-brand-soft text-brand-dark' :
+                    'bg-danger-soft text-danger-dark'
+                  }`}>
+                    {percentage}
+                  </div>
+                  <div class="flex-1 min-w-0">
+                    <p class="text-sm font-bold text-heading truncate">
+                      {grade.submission?.item?.title ?? `Actividad #${grade.submissionId.slice(0,8)}`}
+                    </p>
+                    <p class="text-xs text-subtle mt-0.5">
+                      Calificado el {new Date(grade.gradedAt).toLocaleDateString('es-ES', { dateStyle: 'medium' })}
+                    </p>
+                  </div>
+                  <div class="text-right shrink-0">
+                    <p class="text-sm font-extrabold text-heading">{grade.score} / {grade.maxScore}</p>
+                    <div class={`text-[10px] font-bold px-2 py-0.5 rounded-full mt-1 ${
+                      isExcellent ? 'bg-success-soft text-success-dark' :
+                      isGood ? 'bg-brand-soft text-brand-dark' :
+                      'bg-danger-soft text-danger-dark'
+                    }`}>
+                      {isExcellent ? 'Excelente' : isGood ? 'Aprobado' : 'Por mejorar'}
+                    </div>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        </div>
+
+      </div>
+    )}
+
+  </div>
+</DashboardLayout>

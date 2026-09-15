@@ -1,0 +1,44 @@
+---
+/**
+ * DashboardLayout.astro
+ * Layout base para TODAS las páginas del dashboard.
+ * Encapsula: Sidebar + Header + área de contenido principal.
+ * Las páginas solo proveen el contenido via <slot />.
+ */
+import Sidebar from '../components/ui/Sidebar.astro';
+import Header from '../components/ui/Header.astro';
+import { ClientRouter } from 'astro:transitions';
+import '../styles/global.css';
+
+interface Props {
+  pageTitle: string;
+  breadcrumb?: string;
+  activeNav?: string;
+}
+
+const { pageTitle, breadcrumb = 'Dashboard Estudiantil', activeNav = 'inicio' } = Astro.props;
+---
+<!doctype html>
+<html lang="es">
+  <head>
+    <meta charset="utf-8" />
+    <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="generator" content={Astro.generator} />
+    <title>{pageTitle} — Kelly Academy</title>
+    <meta name="description" content={`${pageTitle} | Kelly Academy LMS`} />
+    <ClientRouter />
+  </head>
+  <body class="flex h-screen overflow-hidden bg-page">
+
+    <Sidebar activeNav={activeNav} />
+
+    <div class="flex flex-col flex-1 overflow-hidden">
+      <Header breadcrumb={breadcrumb} />
+      <main class="flex-1 overflow-y-auto p-6 lg:p-8">
+        <slot />
+      </main>
+    </div>
+
+  </body>
+</html>

@@ -1,0 +1,259 @@
+---
+/**
+ * profesor/cursos/[courseId]/alumnos.astro — Alumnos del Curso (datos reales)
+ * Sin data mockeada. Usa getCourseById + getCourseStudents del backend.
+ */
+import TeacherDashboardLayout from '../../../../layouts/TeacherDashboardLayout.astro';
+import { Icon } from 'astro-icon/components';
+import { TEACHER_ROUTES } from '../../../../core/config/paths';
+import { getCourseById, getCourseStudents, getCourseStats } from '../../../../core/services/courses.service';
+
+export const prerender = false;
+
+const { courseId } = Astro.params;
+const token = Astro.cookies.get('ka_session')?.value ?? '';
+
+if (!courseId) return Astro.redirect('/profesor');
+
+let courseApi;
+try {
+  courseApi = await getCourseById(token, courseId);
+} catch {
+  return Astro.redirect('/profesor/cursos');
+}
+
+const course = {
+  id:             courseApi.id,
+  title:          courseApi.title,
+  subtitle:       courseApi.subtitle ?? '',
+  code:           courseApi.code,
+  status:         courseApi.status.toUpperCase(),
+  bannerGradient: courseApi.bannerGradient ?? 'from-[#8B1A00] via-[#C0291A] to-[#E8402C]',
+};
+
+const [enrollments, stats] = await Promise.all([
+  getCourseStudents(token, courseId).catch(() => []),
+  getCourseStats(token, courseId).catch(() => ({ studentCount: 0, activeStudents: 0, averageProgress: 0 })),
+]);
+
+// Mapear enrollments a formato de tabla
+const studentsData = enrollments.map(e => ({
+  studentId:         e.studentId,
+  studentName:       e.student?.fullName ?? 'Sin nombre',
+  studentEmail:      e.student?.email ?? '',
+  progressPercent:   Math.round(Number(e.progress) || 0),
+  lastActivityDate:  e.updatedAt
+    ? new Date(e.updatedAt).toLocaleDateString('es-CO', { day: '2-digit', month: '2-digit', year: '2-digit' })
+    : '—',
+  status:            (e.student?.status ?? 'activo') as 'activo' | 'en_riesgo' | 'inactivo' | 'suspendido',
+  enrollmentStatus:  e.status,
+}));
+
+const activeCount   = studentsData.filter(s => s.status === 'activo').length;
+const atRiskCount   = studentsData.filter(s => s.status === 'en_riesgo').length;
+const inactiveCount = studentsData.filter(s => s.status === 'inactivo' || s.status === 'suspendido').length;
+const avgProgress   = stats.averageProgress;
+
+const courseTabs = [
+  { label: 'Contenido',      icon: 'lucide:layout-list',  href: TEACHER_ROUTES.courseDetail(course.id),        active: false },
+  { label: 'Calendario',     icon: 'lucide:calendar',     href: TEACHER_ROUTES.courseCalendar(course.id),      active: false },
+  { label: 'Alumnos',        icon: 'lucide:users',        href: TEACHER_ROUTES.courseStudents(course.id),      active: true  },
+  { label: 'Anuncios',       icon: 'lucide:megaphone',    href: TEACHER_ROUTES.courseAnnouncements(course.id), active: false },
+  { label: 'Calificaciones', icon: 'lucide:book-marked',  href: TEACHER_ROUTES.courseGradebook(course.id),     active: false },
+];
+
+const statusColor: Record<string, string> = {
+  activo:     'bg-success-soft text-success-dark border-success-soft',
+  en_riesgo:  'bg-warning-soft text-warning-dark border-warning-soft',
+  inactivo:   'bg-neutral-100 text-neutral-500 border-neutral-200',
+  suspendido: 'bg-danger-soft text-danger-dark border-danger-soft',
+};
+const statusLabel: Record<string, string> = {
+  activo: 'Activo', en_riesgo: 'En riesgo', inactivo: 'Inactivo', suspendido: 'Suspendido',
+};
+---
+
+<TeacherDashboardLayout
+  pageTitle={`Alumnos - ${course.title}`}
+  breadcrumb="Lista de Alumnos"
+  activeNav="cursos"
+>
+  <div class="-mx-6 lg:-mx-8 -mt-6 lg:-mt-8 flex flex-col">
+
+    <!-- BANNER HERO -->
+    <div class={`relative w-full bg-gradient-to-r ${course.bannerGradient} overflow-hidden`}>
+      <div class="absolute inset-0 overflow-hidden pointer-events-none" aria-hidden="true">
+        <div class="absolute -right-16 -top-16 w-80 h-80 rounded-full bg-white/5 blur-3xl"></div>
+        <div class="absolute right-32 bottom-0 w-56 h-56 rounded-full bg-white/5 blur-2xl"></div>
+      </div>
+      <div class="relative z-10 px-8 lg:px-12 pt-8 pb-6">
+        <p class="text-white/60 text-xs font-semibold tracking-widest uppercase mb-2">{course.code}</p>
+        <div class="flex flex-col sm:flex-row sm:items-end justify-between gap-4">
+          <div>
+            <h1 class="text-3xl sm:text-4xl font-extrabold text-white tracking-tight mb-1 drop-shadow-sm">{course.title}</h1>
+            <p class="text-white/70 text-sm font-medium">{course.subtitle}</p>
+          </div>
+          <span class="self-start sm:self-end shrink-0 border border-white/40 text-white text-xs font-extrabold px-4 py-1.5 rounded-full tracking-widest">{course.status}</span>
+        </div>
+      </div>
+      <nav aria-label="Secciones del curso" class="relative z-10 border-t border-white/10">
+        <div class="flex items-center overflow-x-auto px-6 lg:px-12">
+          {courseTabs.map(tab => (
+            <a href={tab.href} role="tab" aria-selected={tab.active}
+              class={['flex items-center gap-2 px-4 py-4 text-sm font-semibold whitespace-nowrap border-b-[3px] transition-all shrink-0',
+                tab.active ? 'border-white text-white' : 'border-transparent text-white/60 hover:text-white/90 hover:border-white/30'].join(' ')}>
+              <Icon name={tab.icon} class="w-4 h-4" aria-hidden="true" /> {tab.label}
+            </a>
+          ))}
+        </div>
+      </nav>
+    </div>
+
+    <!-- CUERPO -->
+    <div class="flex-1 bg-page px-6 lg:px-8 py-8">
+      <div class="max-w-[1200px] mx-auto flex flex-col gap-6">
+
+        <!-- Métricas -->
+        <div class="grid grid-cols-2 sm:grid-cols-4 gap-4">
+          {[
+            { label: 'Total Alumnos',  value: String(studentsData.length), icon: 'lucide:users',          color: 'text-heading' },
+            { label: 'Activos',        value: String(activeCount),         icon: 'lucide:check-circle-2', color: 'text-success-dark' },
+            { label: 'En Riesgo',      value: String(atRiskCount),         icon: 'lucide:alert-triangle', color: 'text-danger' },
+            { label: 'Progreso Prom.', value: `${avgProgress}%`,           icon: 'lucide:trending-up',    color: 'text-brand-dark' },
+          ].map((metric) => (
+            <article class="bg-card rounded-2xl border border-edge p-4 flex items-center gap-3">
+              <Icon name={metric.icon} class={`w-5 h-5 flex-shrink-0 ${metric.color}`} aria-hidden="true" />
+              <div>
+                <p class="text-xl font-extrabold text-heading">{metric.value}</p>
+                <p class="text-xs text-subtle font-semibold">{metric.label}</p>
+              </div>
+            </article>
+          ))}
+        </div>
+
+        <!-- Búsqueda -->
+        <div class="flex flex-col sm:flex-row gap-3">
+          <div class="relative flex-1">
+            <Icon name="lucide:search" class="absolute left-3.5 top-1/2 -translate-y-1/2 w-4 h-4 text-muted" aria-hidden="true" />
+            <input type="search" id="student-search" placeholder="Buscar alumno por nombre o email..."
+              class="w-full pl-10 pr-4 py-2.5 rounded-xl border border-edge bg-card text-sm text-heading placeholder:text-muted font-medium focus:outline-none focus:ring-2 focus:ring-brand focus:border-transparent"
+              aria-label="Buscar alumno" />
+          </div>
+          <div class="flex items-center gap-2">
+            {['Todos','Activos','En Riesgo','Inactivos'].map((filterLabel, idx) => (
+              <button type="button"
+                class={`student-filter-btn px-3 py-2.5 rounded-xl text-xs font-bold border transition-colors whitespace-nowrap ${idx === 0 ? 'bg-brand text-white border-brand' : 'bg-card text-subtle border-edge hover:border-brand/30 hover:text-heading'}`}
+                data-filter={filterLabel.toLowerCase().replace(' ', '_')}>
+                {filterLabel}
+              </button>
+            ))}
+          </div>
+        </div>
+
+        <!-- Tabla -->
+        <section aria-labelledby="students-table-heading">
+          <div class="flex items-center justify-between mb-3 px-1">
+            <span class="text-[0.82rem] font-medium text-subtle bg-neutral-subtle/50 px-3 py-1 rounded-md border border-edge-soft">
+              {studentsData.length} alumnos inscritos
+            </span>
+          </div>
+
+          {studentsData.length === 0 ? (
+            <div class="bg-card rounded-2xl border border-edge p-12 flex flex-col items-center gap-3">
+              <Icon name="lucide:users" class="w-10 h-10 text-muted" aria-hidden="true" />
+              <p class="text-sm font-semibold text-subtle">No hay alumnos inscritos en este curso aún.</p>
+            </div>
+          ) : (
+            <div class="bg-card rounded-2xl border border-edge shadow-sm overflow-hidden overflow-x-auto">
+              <table class="w-full text-left border-collapse min-w-[700px]">
+                <thead>
+                  <tr class="border-b border-edge bg-neutral-bg/30">
+                    <th scope="col" class="py-4 px-5 text-[0.8rem] font-bold text-heading">
+                      <span id="students-table-heading">Alumno</span>
+                    </th>
+                    <th scope="col" class="py-4 px-5 text-[0.8rem] font-bold text-heading">Progreso</th>
+                    <th scope="col" class="py-4 px-5 text-[0.8rem] font-bold text-heading">Estado</th>
+                    <th scope="col" class="py-4 px-5 text-[0.8rem] font-bold text-heading">Última Actividad</th>
+                    <th scope="col" class="py-4 px-5 text-[0.8rem] font-bold text-heading">Inscripción</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {studentsData.map(s => (
+                    <tr class="border-b border-edge-soft hover:bg-neutral-bg/30 transition-colors student-row"
+                      data-name={s.studentName.toLowerCase()} data-email={s.studentEmail.toLowerCase()} data-status={s.status}>
+                      <td class="py-4 px-5">
+                        <div class="flex items-center gap-3">
+                          <div class="w-8 h-8 rounded-full bg-brand-soft text-brand-dark text-xs font-extrabold flex items-center justify-center shrink-0">
+                            {s.studentName.split(' ').map((w: string) => w[0] ?? '').slice(0,2).join('').toUpperCase()}
+                          </div>
+                          <div>
+                            <p class="text-sm font-bold text-heading">{s.studentName}</p>
+                            <p class="text-xs text-subtle font-medium">{s.studentEmail}</p>
+                          </div>
+                        </div>
+                      </td>
+                      <td class="py-4 px-5">
+                        <div class="flex items-center gap-2.5 min-w-[120px]">
+                          <div class="flex-1 h-1.5 bg-neutral-subtle rounded-full overflow-hidden">
+                            <div class="h-full rounded-full bg-brand" style={`width: ${s.progressPercent}%`}></div>
+                          </div>
+                          <span class="text-xs font-bold text-heading shrink-0">{s.progressPercent}%</span>
+                        </div>
+                      </td>
+                      <td class="py-4 px-5">
+                        <span class={`inline-flex items-center px-2.5 py-1 rounded-full border text-[0.7rem] font-bold ${statusColor[s.status] ?? statusColor['activo']}`}>
+                          {statusLabel[s.status] ?? s.status}
+                        </span>
+                      </td>
+                      <td class="py-4 px-5 text-xs text-subtle font-medium">{s.lastActivityDate}</td>
+                      <td class="py-4 px-5">
+                        <span class={`inline-flex items-center px-2.5 py-1 rounded-full text-[0.7rem] font-bold ${s.enrollmentStatus === 'activo' ? 'bg-success-soft text-success-dark' : 'bg-neutral-100 text-neutral-500'}`}>
+                          {s.enrollmentStatus}
+                        </span>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </section>
+      </div>
+    </div>
+  </div>
+
+<script>
+  // Búsqueda y filtrado en tabla
+  const searchInput = document.getElementById('student-search') as HTMLInputElement;
+  let activeFilter = 'todos';
+
+  function applyFilters() {
+    const q = searchInput?.value.toLowerCase().trim() ?? '';
+    document.querySelectorAll<HTMLTableRowElement>('.student-row').forEach(row => {
+      const name   = row.dataset.name ?? '';
+      const email  = row.dataset.email ?? '';
+      const status = row.dataset.status ?? '';
+      const matchSearch = !q || name.includes(q) || email.includes(q);
+      const matchFilter = activeFilter === 'todos'
+        || (activeFilter === 'activos' && status === 'activo')
+        || (activeFilter === 'en_riesgo' && status === 'en_riesgo')
+        || (activeFilter === 'inactivos' && (status === 'inactivo' || status === 'suspendido'));
+      row.style.display = matchSearch && matchFilter ? '' : 'none';
+    });
+  }
+
+  searchInput?.addEventListener('input', applyFilters);
+
+  document.querySelectorAll<HTMLButtonElement>('.student-filter-btn').forEach(btn => {
+    btn.addEventListener('click', () => {
+      activeFilter = btn.dataset.filter ?? 'todos';
+      document.querySelectorAll('.student-filter-btn').forEach(b => {
+        const isA = b.getAttribute('data-filter') === activeFilter;
+        b.className = `student-filter-btn px-3 py-2.5 rounded-xl text-xs font-bold border transition-colors whitespace-nowrap ${isA ? 'bg-brand text-white border-brand' : 'bg-card text-subtle border-edge hover:border-brand/30 hover:text-heading'}`;
+      });
+      applyFilters();
+    });
+  });
+</script>
+
+</TeacherDashboardLayout>

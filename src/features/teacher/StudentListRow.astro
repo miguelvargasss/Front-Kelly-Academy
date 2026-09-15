@@ -1,0 +1,126 @@
+---
+/**
+ * StudentListRow.astro — features/teacher
+ * Fila de la tabla de alumnos para la vista del profesor.
+ * Muestra: avatar, nombre, email, progreso, última actividad y acciones.
+ */
+import { Icon } from 'astro-icon/components';
+
+interface Props {
+  studentId: string;
+  studentName: string;
+  studentEmail: string;
+  avatarSrc?: string;
+  progressPercent: number;
+  lastActivityDate: string;
+  status: 'activo' | 'inactivo' | 'en_riesgo';
+  pendingSubmissions: number;
+}
+
+const {
+  studentId,
+  studentName,
+  studentEmail,
+  avatarSrc,
+  progressPercent,
+  lastActivityDate,
+  status,
+  pendingSubmissions,
+} = Astro.props;
+
+const studentInitials = studentName.split(' ').map((w) => w[0] ?? '').join('').slice(0, 2).toUpperCase();
+const finalAvatarSrc = avatarSrc ?? `https://ui-avatars.com/api/?name=${encodeURIComponent(studentName)}&background=fde8e2&color=d93e14&bold=true`;
+
+const statusConfig = {
+  activo:     { label: 'Activo',    classes: 'bg-success-soft text-success-dark' },
+  inactivo:   { label: 'Inactivo',  classes: 'bg-neutral-subtle text-subtle' },
+  en_riesgo:  { label: 'En riesgo', classes: 'bg-danger-soft text-danger-dark' },
+} as const;
+
+const currentStatus = statusConfig[status];
+---
+
+<tr class="hover:bg-neutral-bg/50 transition-colors group border-b border-edge-soft last:border-0">
+
+  <!-- Alumno -->
+  <td class="py-4 px-5">
+    <div class="flex items-center gap-3">
+      <img
+        src={finalAvatarSrc}
+        alt={`Foto de ${studentName}`}
+        width="36"
+        height="36"
+        class="w-9 h-9 rounded-xl object-cover bg-neutral-subtle flex-shrink-0"
+      />
+      <div class="min-w-0">
+        <p class="text-sm font-bold text-heading truncate group-hover:text-brand-dark transition-colors">
+          {studentName}
+        </p>
+        <p class="text-xs text-subtle font-medium truncate">{studentEmail}</p>
+      </div>
+    </div>
+  </td>
+
+  <!-- Progreso -->
+  <td class="py-4 px-5">
+    <div class="flex items-center gap-3 min-w-[120px]">
+      <div class="flex-1 h-1.5 bg-neutral-subtle rounded-full overflow-hidden">
+        <div
+          class={`h-full rounded-full ${progressPercent >= 70 ? 'bg-success' : progressPercent >= 40 ? 'bg-brand-dark' : 'bg-red-400'}`}
+          style={`width: ${progressPercent}%`}
+          role="progressbar"
+          aria-valuenow={progressPercent}
+          aria-valuemin={0}
+          aria-valuemax={100}
+        ></div>
+      </div>
+      <span class="text-xs font-bold text-heading shrink-0">{progressPercent}%</span>
+    </div>
+  </td>
+
+  <!-- Estado -->
+  <td class="py-4 px-5">
+    <span class={`inline-flex items-center text-[10px] font-bold px-2.5 py-1 rounded-full ${currentStatus.classes}`}>
+      {currentStatus.label}
+    </span>
+  </td>
+
+  <!-- Última actividad -->
+  <td class="py-4 px-5 text-xs text-subtle font-medium whitespace-nowrap">
+    {lastActivityDate}
+  </td>
+
+  <!-- Entregas pendientes -->
+  <td class="py-4 px-5 text-center">
+    {pendingSubmissions > 0 ? (
+      <span class="inline-flex items-center justify-center min-w-[22px] h-5 px-1.5 bg-danger-soft text-danger-dark text-[10px] font-bold rounded-full">
+        {pendingSubmissions}
+      </span>
+    ) : (
+      <Icon name="lucide:check-circle-2" class="w-4 h-4 text-success mx-auto" aria-label="Sin pendientes" />
+    )}
+  </td>
+
+  <!-- Acciones -->
+  <td class="py-4 px-5">
+    <div class="flex items-center gap-2 justify-end">
+      <button
+        type="button"
+        class="student-grade-btn p-2 rounded-lg bg-brand-soft text-brand-dark hover:bg-brand hover:text-white transition-colors"
+        data-student-id={studentId}
+        data-student-name={studentName}
+        aria-label={`Calificar a ${studentName}`}
+      >
+        <Icon name="lucide:clipboard-pen" class="w-4 h-4" aria-hidden="true" />
+      </button>
+      <button
+        type="button"
+        class="p-2 rounded-lg bg-neutral-subtle text-subtle hover:bg-neutral-light hover:text-heading transition-colors"
+        aria-label={`Enviar mensaje a ${studentName}`}
+      >
+        <Icon name="lucide:mail" class="w-4 h-4" aria-hidden="true" />
+      </button>
+    </div>
+  </td>
+
+</tr>

@@ -1,0 +1,276 @@
+---
+/**
+ * estudiante/cursos/[courseId]/recurso/[resourceId].astro
+ * ─────────────────────────────────────────────────────────
+ * Visor de recursos para el estudiante. Solo lectura.
+ * Soporta: PDF, imagen, video (nativo + YouTube/Vimeo), audio, enlace.
+ * Solo accesible si el recurso está publicado (isPublished) y visible (isVisible).
+ */
+import ResourceViewerLayout from '../../../../../layouts/ResourceViewerLayout.astro';
+import { Icon } from 'astro-icon/components';
+import { APP_ROUTES } from '../../../../../core/config/paths';
+import { getCourseWeeks, getWeekItems } from '../../../../../core/services/api';
+import type { ContentItem } from '../../../../../core/types/api.types';
+
+export const prerender = false;
+
+const { courseId, resourceId } = Astro.params;
+const token = Astro.cookies.get('ka_session')?.value ?? '';
+
+if (!courseId || !resourceId) {
+  return Astro.redirect('/estudiante/cursos');
+}
+
+type ResourceViewerType = 'pdf' | 'documento' | 'imagen' | 'video' | 'video-embed' | 'audio' | 'enlace' | 'archivo' | 'tarea' | 'quiz' | 'evaluacion' | string;
+
+function detectViewerType(url: string | null, declaredType: string): ResourceViewerType {
+  if (!url) return declaredType;
+  const u = url.toLowerCase();
+  if (u.includes('youtube.com') || u.includes('youtu.be') || u.includes('vimeo.com')) return 'video-embed';
+  if (u.match(/\.(jpg|jpeg|png|gif|webp|svg|avif)(\?|$)/)) return 'imagen';
+  if (u.match(/\.(mp4|webm|ogv|mov)(\?|$)/)) return 'video';
+  if (u.match(/\.(mp3|wav|ogg|aac|flac|m4a)(\?|$)/)) return 'audio';
+  if (u.match(/\.(pdf)(\?|$)/)) return 'pdf';
+  if (u.match(/\.(docx?|xlsx?|pptx?|odt|ods|odp)(\?|$)/)) return 'documento';
+  if (u.includes('res.cloudinary.com') && ['tarea', 'evaluacion', 'quiz'].includes(declaredType)) return 'pdf';
+  return declaredType;
+}
+
+function getYoutubeEmbedUrl(url: string): string {
+  const ytMatch = url.match(/(?:youtube\.com\/watch\?v=|youtu\.be\/)([^&\s]+)/);
+  const vmMatch = url.match(/vimeo\.com\/(\d+)/);
+  if (ytMatch) return `https://www.youtube.com/embed/${ytMatch[1]}?autoplay=0&rel=0`;
+  if (vmMatch) return `https://player.vimeo.com/video/${vmMatch[1]}`;
+  return url;
+}
+
+function getDocumentEmbedUrl(url: string, declaredType: string): string {
+  const isOfficeDoc = url.match(/\.(docx?|xlsx?|pptx?|odt|ods|odp)(\?|$)/i) || declaredType === 'documento';
+  if (isOfficeDoc) {
+    return `https://view.officeapps.live.com/op/embed.aspx?src=${encodeURIComponent(url)}`;
+  }
+  return url;
+}
+
+function getSafeCloudinaryUrl(url: string): string {
+  if (url.includes('res.cloudinary.com') && url.endsWith('.pdf')) {
+    return url.replace('/upload/', '/upload/fl_attachment/');
+  }
+  return url;
+}
+
+interface ResourceDetail {
+  id: string;
+  title: string;
+  declaredType: string;
+  viewerType: ResourceViewerType;
+  url: string | null;
+  meta: string | null;
+  isPublished: boolean;
+  isVisible: boolean;
+  dueDate: string | null;
+  maxScore: number | null;
+}
+
+let resource: ResourceDetail | null = null;
+
+try {
+  const weeks = await getCourseWeeks(token, courseId);
+  for (const week of weeks) {
+    const items = await getWeekItems(token, courseId, week.id);
+    const found = items.find((i: ContentItem) => i.id === resourceId);
+    if (found) {
+      resource = {
+        id: found.id,
+        title: found.title,
+        declaredType: found.type,
+        viewerType: detectViewerType(found.url, found.type),
+        url: found.url ?? null,
+        meta: found.meta ?? null,
+        isPublished: found.isPublished,
+        isVisible: found.isVisible,
+        dueDate: found.dueDate ?? null,
+        maxScore: found.maxScore ?? null,
+      };
+      break;
+    }
+  }
+} catch (error: any) {
+  if (error?.statusCode === 401) return Astro.redirect('/logout');
+}
+
+if (!resource || !resource.isPublished || !resource.isVisible) {
+  return Astro.redirect(APP_ROUTES.courseDetail(courseId));
+}
+
+const backUrl = APP_ROUTES.courseDetail(courseId);
+
+const safePdfUrl = resource.viewerType === 'pdf' && resource.url
+  ? getSafeCloudinaryUrl(resource.url)
+  : resource.url;
+
+const embedUrl = resource.url
+  ? resource.viewerType === 'video-embed'
+    ? getYoutubeEmbedUrl(resource.url)
+    : (resource.viewerType === 'documento' || resource.viewerType === 'pdf')
+      ? getDocumentEmbedUrl(safePdfUrl!, resource.declaredType)
+      : resource.url
+  : null;
+
+const typeLabels: Record<string, string> = {
+  pdf: 'PDF', documento: 'Documento', imagen: 'Imagen',
+  video: 'Video', 'video-embed': 'Video', audio: 'Audio',
+  enlace: 'Enlace', archivo: 'Archivo', tarea: 'Tarea',
+  quiz: 'Quiz', evaluacion: 'Evaluación',
+};
+const typeIcons: Record<string, string> = {
+  pdf: 'lucide:file-text', documento: 'lucide:file-text', imagen: 'lucide:image',
+  video: 'lucide:video', 'video-embed': 'lucide:video', audio: 'lucide:headphones',
+  enlace: 'lucide:external-link', archivo: 'lucide:paperclip',
+  tarea: 'lucide:clipboard-list', quiz: 'lucide:help-circle', evaluacion: 'lucide:star',
+};
+
+const typeIcon  = typeIcons[resource.viewerType]  ?? 'lucide:file';
+const typeLabel = typeLabels[resource.viewerType] ?? resource.declaredType;
+const isActivity = ['tarea', 'evaluacion', 'quiz'].includes(resource.declaredType);
+---
+
+<ResourceViewerLayout
+  pageTitle={resource.title}
+  resourceTitle={resource.title}
+  backUrl={backUrl}
+>
+  {isActivity ? (
+    <div class="w-full h-full bg-white flex flex-col overflow-auto min-h-0">
+      <div class="flex-1 flex flex-col w-full max-w-4xl mx-auto p-6 lg:p-10">
+        <div class="mb-8 border-b border-edge-soft pb-6">
+          <div class="flex items-center gap-2 text-sm text-subtle font-medium mb-3">
+            <Icon name={typeIcon} class="w-4 h-4" />
+            <span class="uppercase tracking-wide">{typeLabel}</span>
+          </div>
+          <h1 class="text-3xl font-extrabold text-brand-dark">{resource.title}</h1>
+          {resource.meta && (
+            <p class="text-subtle text-sm mt-2 leading-relaxed">{resource.meta}</p>
+          )}
+        </div>
+        <div class="grid grid-cols-1 md:grid-cols-2 gap-6 mb-8">
+          <div class="bg-card border border-edge rounded-xl p-5 flex items-start gap-3">
+            <Icon name="lucide:calendar" class="w-5 h-5 text-brand mt-0.5 shrink-0" />
+            <div>
+              <p class="text-sm font-bold text-heading">Fecha límite</p>
+              <p class="text-sm text-subtle">
+                {resource.dueDate
+                  ? new Date(resource.dueDate).toLocaleString('es-ES', { dateStyle: 'long', timeStyle: 'short' })
+                  : 'Sin fecha límite'}
+              </p>
+            </div>
+          </div>
+          <div class="bg-card border border-edge rounded-xl p-5 flex items-start gap-3">
+            <Icon name="lucide:award" class="w-5 h-5 text-brand mt-0.5 shrink-0" />
+            <div>
+              <p class="text-sm font-bold text-heading">Puntuación máxima</p>
+              <p class="text-sm text-subtle">{resource.maxScore ? resource.maxScore + ' puntos' : '100 puntos'}</p>
+            </div>
+          </div>
+        </div>
+        {resource.url && (
+          <div class="bg-brand-soft/30 border border-brand/20 rounded-xl p-5 mb-8">
+            <div class="flex items-center gap-3">
+              <div class="w-10 h-10 bg-brand-soft rounded-lg flex items-center justify-center shrink-0">
+                <Icon name={typeIcon} class="w-5 h-5 text-brand-dark" />
+              </div>
+              <div class="flex-1 min-w-0">
+                <p class="text-sm font-bold text-heading">Material adjunto</p>
+                <p class="text-xs text-subtle mt-0.5 truncate">{resource.url}</p>
+              </div>
+              <a href={resource.url} target="_blank" rel="noopener noreferrer"
+                class="shrink-0 flex items-center gap-2 bg-brand-dark hover:bg-brand text-white text-sm font-bold px-4 py-2 rounded-xl transition-colors">
+                <Icon name="lucide:download" class="w-4 h-4" />
+                Descargar
+              </a>
+            </div>
+          </div>
+        )}
+        <a href={backUrl} class="inline-flex items-center gap-2 text-sm font-semibold text-brand hover:underline mt-auto">
+          <Icon name="lucide:arrow-left" class="w-4 h-4" />
+          Volver al curso
+        </a>
+      </div>
+    </div>
+  ) : resource.viewerType === 'video-embed' ? (
+    <div class="w-full h-full flex items-center justify-center bg-black">
+      <iframe src={embedUrl!} title={resource.title} class="w-full h-full"
+        allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; fullscreen"
+        allowfullscreen loading="lazy"></iframe>
+    </div>
+  ) : resource.viewerType === 'video' ? (
+    <div class="w-full h-full flex items-center justify-center bg-black">
+      <video src={resource.url!} controls class="max-w-full max-h-full" preload="metadata">
+        Tu navegador no soporta el reproductor de video.
+      </video>
+    </div>
+  ) : resource.viewerType === 'audio' ? (
+    <div class="w-full h-full flex flex-col items-center justify-center gap-6 p-8">
+      <div class="w-24 h-24 bg-brand-soft rounded-full flex items-center justify-center">
+        <Icon name="lucide:headphones" class="w-12 h-12 text-brand-dark" />
+      </div>
+      <h2 class="text-xl font-extrabold text-heading text-center">{resource.title}</h2>
+      {resource.meta && (
+        <p class="text-sm text-subtle text-center max-w-md">{resource.meta}</p>
+      )}
+      <audio src={resource.url!} controls class="w-full max-w-md mt-4">
+        Tu navegador no soporta el reproductor de audio.
+      </audio>
+    </div>
+  ) : resource.viewerType === 'imagen' ? (
+    <div class="w-full h-full flex items-center justify-center p-4 bg-neutral-bg/30">
+      <img src={resource.url!} alt={resource.title}
+        class="max-w-full max-h-full object-contain rounded-lg shadow-lg" loading="lazy" />
+    </div>
+  ) : resource.viewerType === 'enlace' ? (
+    <div class="w-full h-full flex flex-col items-center justify-center gap-6 p-8">
+      <div class="w-20 h-20 bg-brand-soft rounded-full flex items-center justify-center">
+        <Icon name="lucide:external-link" class="w-10 h-10 text-brand-dark" />
+      </div>
+      <div class="text-center">
+        <h2 class="text-2xl font-extrabold text-heading mb-2">{resource.title}</h2>
+        {resource.meta && (
+          <p class="text-sm text-subtle max-w-sm mx-auto leading-relaxed">{resource.meta}</p>
+        )}
+      </div>
+      <a href={resource.url!} target="_blank" rel="noopener noreferrer"
+        class="flex items-center gap-2 bg-brand-dark hover:bg-brand text-white font-bold px-6 py-3 rounded-xl transition-colors shadow-md">
+        <Icon name="lucide:external-link" class="w-5 h-5" />
+        Abrir enlace
+      </a>
+      <p class="text-xs text-subtle mt-2 max-w-xs text-center break-all">{resource.url}</p>
+    </div>
+  ) : (resource.viewerType === 'pdf' || resource.viewerType === 'documento') && embedUrl ? (
+    <iframe src={embedUrl} title={resource.title} class="w-full h-full border-0" loading="lazy"></iframe>
+  ) : resource.url ? (
+    <div class="w-full h-full flex flex-col items-center justify-center gap-6 p-8">
+      <div class="w-20 h-20 bg-neutral-subtle rounded-full flex items-center justify-center">
+        <Icon name="lucide:paperclip" class="w-10 h-10 text-subtle" />
+      </div>
+      <div class="text-center">
+        <h2 class="text-2xl font-extrabold text-heading mb-2">{resource.title}</h2>
+        <p class="text-sm text-subtle mb-6">Este tipo de archivo no se puede previsualizar directamente.</p>
+        <a href={resource.url} download
+          class="flex items-center gap-2 bg-brand-dark hover:bg-brand text-white font-bold px-6 py-3 rounded-xl transition-colors shadow-md mx-auto w-fit">
+          <Icon name="lucide:download" class="w-5 h-5" />
+          Descargar recurso
+        </a>
+      </div>
+    </div>
+  ) : (
+    <div class="w-full h-full flex flex-col items-center justify-center gap-4 p-8">
+      <Icon name="lucide:file-x" class="w-16 h-16 text-subtle" />
+      <p class="text-heading font-bold text-lg">Sin archivo disponible</p>
+      <p class="text-subtle text-sm">Este recurso no tiene un archivo adjunto aún.</p>
+      <a href={backUrl} class="mt-4 text-sm font-bold text-brand hover:underline flex items-center gap-1">
+        <Icon name="lucide:arrow-left" class="w-4 h-4" />
+        Volver al curso
+      </a>
+    </div>
+  )}
+</ResourceViewerLayout>

@@ -1,0 +1,45 @@
+---
+import { Icon } from 'astro-icon/components';
+import Button from '../../components/ui/Button.astro';
+
+interface PendingTask {
+  icon: string;
+  title: string;
+  courseLabel: string;
+  deliveryCount: number;
+  href: string;
+}
+
+const pendingTasks: PendingTask[] = [
+  { icon: 'lucide:file-text',      title: 'Ensayo: Impacto de ...',  courseLabel: 'Inglés Avanzado B2',       deliveryCount: 12, href: '#' },
+  { icon: 'lucide:mic',            title: 'Práctica de Pronunc...', courseLabel: 'Conversación Empresarial',  deliveryCount: 8,  href: '#' },
+  { icon: 'lucide:clipboard-list', title: 'Quiz Semanal 4',          courseLabel: 'TOEFL Prep',               deliveryCount: 18, href: '#' },
+];
+---
+
+<aside class="bg-brand-soft rounded-xl p-5 flex flex-col gap-4 border border-brand-muted">
+  <div class="flex items-start justify-between gap-3">
+    <h2 class="text-base font-bold text-heading">Tareas por Calificar</h2>
+    <span class="flex-shrink-0 inline-flex items-center gap-1 bg-brand text-white text-xs font-bold px-2 py-1 rounded-lg">
+      3 <span class="font-normal">Nuevas</span>
+    </span>
+  </div>
+
+  <ul class="space-y-3" aria-label="Tareas pendientes">
+    {pendingTasks.map((task) => (
+      <li class="flex items-start gap-3">
+        <div class="flex-shrink-0 w-8 h-8 bg-white rounded-lg flex items-center justify-center border border-edge">
+          <Icon name={task.icon} class="w-4 h-4 text-subtle" aria-hidden="true" />
+        </div>
+        <div class="flex-1 min-w-0">
+          <p class="text-sm font-semibold text-heading truncate">{task.title}</p>
+          <p class="text-xs text-subtle truncate">{task.courseLabel} • {task.deliveryCount} entregas</p>
+        </div>
+      </li>
+    ))}
+  </ul>
+
+  <Button variant="outline" size="sm" href="#" class="w-full justify-center">
+    Ver todas las tareas
+  </Button>
+</aside>

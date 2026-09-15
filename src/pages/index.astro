@@ -1,17 +1,29 @@
 ---
+/**
+ * index.astro — Página raíz
+ * ─────────────────────────────────────────────────────────────────
+ * Esta página NUNCA renderiza contenido propio.
+ * El middleware (src/middleware.ts) ya redirige:
+ *   • Sin sesión       → /login
+ *   • rol=profesor     → /profesor
+ *   • rol=estudiante   → /estudiante (portal estudiantil)
+ *
+ * Si por alguna razón el middleware no redirigió (edge case),
+ * esta página hace una redirección server-side inmediata.
+ */
+const { cookies, redirect } = Astro;
 
+const session = cookies.get('ka_session')?.value;
+const role    = cookies.get('ka_role')?.value ?? 'estudiante';
+
+if (!session) {
+  return redirect('/login', 302);
+}
+
+if (role === 'profesor') {
+  return redirect('/profesor', 302);
+}
+
+// Estudiante autenticado → dashboard estudiantil
+return redirect('/estudiante', 302);
 ---
-
-<html lang="en">
-	<head>
-		<meta charset="utf-8" />
-		<link rel="icon" type="image/svg+xml" href="/favicon.svg" />
-		<link rel="icon" href="/favicon.ico" />
-		<meta name="viewport" content="width=device-width" />
-		<meta name="generator" content={Astro.generator} />
-		<title>Astro</title>
-	</head>
-	<body>
-		<h1>Astro</h1>
-	</body>
-</html>

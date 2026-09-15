@@ -1,0 +1,87 @@
+---
+import DashboardLayout from '../../../../layouts/DashboardLayout.astro';
+import { Icon } from 'astro-icon/components';
+import { APP_ROUTES } from '../../../../core/config/paths';
+import { getCourseById, getCourseStats } from '../../../../core/services/api';
+
+export const prerender = false;
+
+const { courseId } = Astro.params;
+const token = Astro.cookies.get('ka_session')?.value ?? '';
+
+if (!courseId) return Astro.redirect('/estudiante/cursos');
+
+let courseApi;
+let courseStatsApi;
+try {
+  courseApi = await getCourseById(token, courseId);
+  courseStatsApi = await getCourseStats(token, courseId).catch(() => ({ studentCount: 0, averageProgress: 0 }));
+} catch (error: unknown) {
+  if (error?.statusCode === 401) return Astro.redirect('/logout');
+  return Astro.redirect('/estudiante/cursos');
+}
+
+const course = {
+  id:              courseApi.id,
+  title:           courseApi.title,
+  subtitle:        courseApi.subtitle || '',
+  code:            courseApi.code,
+  status:          courseApi.status.toUpperCase(),
+  studentCount:    courseStatsApi.studentCount,
+  averageProgress: courseStatsApi.averageProgress,
+  pendingTasks:    0,
+  bannerGradient:  courseApi.bannerGradient || 'from-[#00607A] via-[#008BA8] to-[#00B8D4]',
+};
+
+const courseTabs = [
+  { label: 'Contenido', icon: 'lucide:layout-list',     href: APP_ROUTES.courseDetail(course.id),          active: false },
+  { label: 'Calendario',icon: 'lucide:calendar',        href: APP_ROUTES.courseCalendar(course.id),        active: false },
+  { label: 'Compañeros',icon: 'lucide:users',           href: APP_ROUTES.courseStudents(course.id),        active: false },
+  { label: 'Anuncios',  icon: 'lucide:megaphone',       href: APP_ROUTES.courseAnnouncements(course.id),   active: true  },
+];
+---
+
+<DashboardLayout pageTitle={`${course.title} — Anuncios`} breadcrumb="Detalle del Curso" activeNav="cursos">
+  <div class="-mx-6 lg:-mx-8 -mt-6 lg:-mt-8 flex flex-col" data-course-id={courseId}>
+    <!-- Banner Hero -->
+    <div class={`relative w-full bg-gradient-to-r ${course.bannerGradient} overflow-hidden`}>
+      <div class="absolute inset-0 overflow-hidden pointer-events-none" aria-hidden="true">
+        <div class="absolute -right-16 -top-16 w-80 h-80 rounded-full bg-white/5 blur-3xl"></div>
+        <div class="absolute right-32 bottom-0 w-56 h-56 rounded-full bg-white/5 blur-2xl"></div>
+      </div>
+      <div class="relative z-10 px-8 lg:px-12 pt-8 pb-6">
+        <p class="text-white/60 text-xs font-semibold tracking-widest uppercase mb-2">{course.code}</p>
+        <div class="flex flex-col sm:flex-row sm:items-end justify-between gap-4">
+          <div>
+            <h1 class="text-3xl sm:text-4xl font-extrabold text-white tracking-tight mb-1">{course.title}</h1>
+            <p class="text-white/70 text-sm font-medium">{course.subtitle}</p>
+          </div>
+        </div>
+      </div>
+      <!-- Tabs -->
+      <nav aria-label="Secciones del curso" class="relative z-10 border-t border-white/10">
+        <div class="flex items-center overflow-x-auto px-6 lg:px-12">
+          {courseTabs.map(tab => (
+            <a href={tab.href} role="tab" aria-selected={tab.active} class={`flex items-center gap-2 px-4 py-4 text-sm font-semibold whitespace-nowrap border-b-[3px] transition-all shrink-0 ${tab.active ? 'border-white text-white' : 'border-transparent text-white/60 hover:text-white/90 hover:border-white/30'}`}>
+              <Icon name={tab.icon} class="w-4 h-4" aria-hidden="true" />
+              {tab.label}
+            </a>
+          ))}
+        </div>
+      </nav>
+    </div>
+
+    <!-- Cuerpo -->
+    <div class="flex-1 bg-page px-6 lg:px-8 py-8">
+      <div class="max-w-[1200px] mx-auto bg-card rounded-3xl p-12 border border-edge text-center flex flex-col items-center justify-center min-h-[400px]">
+        <div class="w-20 h-20 bg-brand-soft rounded-full flex items-center justify-center mb-6 text-brand">
+          <Icon name="lucide:megaphone" class="w-10 h-10" />
+        </div>
+        <h2 class="text-3xl font-extrabold text-heading mb-3">Anuncios y Novedades</h2>
+        <p class="text-subtle text-lg max-w-lg mx-auto">
+          Próximamente los anuncios y notificaciones publicadas por tu profesor aparecerán en esta sección.
+        </p>
+      </div>
+    </div>
+  </div>
+</DashboardLayout>

@@ -1,0 +1,25 @@
+---
+/**
+ * Card.astro — Componente UI puro (Design System)
+ * Contenedor genérico visual. No tiene lógica de negocio.
+ * OCP: se extiende via `class` y el <slot />.
+ */
+
+interface Props {
+  class?: string;
+  padding?: 'none' | 'sm' | 'md' | 'lg';
+}
+
+const { class: extraClass = '', padding = 'md' } = Astro.props;
+
+const paddingMap: Record<NonNullable<Props['padding']>, string> = {
+  none: '',
+  sm:   'p-3',
+  md:   'p-5',
+  lg:   'p-6',
+};
+---
+
+<div class={`bg-[--color-surface-card] rounded-xl border border-[--color-border-default] ${paddingMap[padding]} ${extraClass}`}>
+  <slot />
+</div>

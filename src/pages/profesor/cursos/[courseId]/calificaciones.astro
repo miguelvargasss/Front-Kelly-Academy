@@ -1,0 +1,729 @@
+---
+/**
+ * profesor/cursos/[courseId]/calificaciones.astro — Libro de Calificaciones
+ * ─────────────────────────────────────────────────────────────────────────────
+ * Vista principal del Libro de Calificaciones para el profesor.
+ * Muestra actividades agrupadas por semana. Al hacer clic en una actividad
+ * se carga el panel de entregas de todos los alumnos del curso (quién
+ * entregó, quién no, con la opción de ver la entrega y calificar).
+ */
+import TeacherDashboardLayout from '../../../../layouts/TeacherDashboardLayout.astro';
+import { Icon } from 'astro-icon/components';
+import { TEACHER_ROUTES } from '../../../../core/config/paths';
+import { getCourseById } from '../../../../core/services/courses.service';
+import { getCourseActivities } from '../../../../core/services/grades.service';
+
+export const prerender = false;
+
+const { courseId } = Astro.params;
+const rawCookie = Astro.request.headers.get('cookie') ?? '';
+const tokenMatch = rawCookie.match(/(?:^|; )ka_session=([^;]*)/);
+const token = tokenMatch ? decodeURIComponent(tokenMatch[1]) : '';
+
+if (!courseId) return Astro.redirect('/profesor');
+if (!token) return Astro.redirect('/login');
+
+let courseApi: any;
+try {
+  courseApi = await getCourseById(token, courseId);
+} catch {
+  return Astro.redirect('/profesor/cursos');
+}
+
+const course = {
+  id:             courseApi.id,
+  title:          courseApi.title,
+  subtitle:       courseApi.subtitle ?? '',
+  code:           courseApi.code,
+  bannerGradient: courseApi.bannerGradient ?? 'from-[#8B1A00] via-[#C0291A] to-[#E8402C]',
+};
+
+const weekGroups = await getCourseActivities(token, courseId).catch(() => []);
+
+const courseTabs = [
+  { label: 'Contenido',      icon: 'lucide:layout-list',  href: TEACHER_ROUTES.courseDetail(course.id),        active: false },
+  { label: 'Calendario',     icon: 'lucide:calendar',     href: TEACHER_ROUTES.courseCalendar(course.id),      active: false },
+  { label: 'Alumnos',        icon: 'lucide:users',        href: TEACHER_ROUTES.courseStudents(course.id),      active: false },
+  { label: 'Anuncios',       icon: 'lucide:megaphone',    href: TEACHER_ROUTES.courseAnnouncements(course.id), active: false },
+  { label: 'Calificaciones', icon: 'lucide:book-marked',  href: TEACHER_ROUTES.courseGradebook(course.id),     active: true  },
+];
+
+const API_BASE = import.meta.env.PUBLIC_API_URL || 'http://localhost:3000/api/v1';
+
+function typeIcon(type: string) {
+  const map: Record<string, string> = { tarea: 'lucide:clipboard-list', quiz: 'lucide:help-circle', evaluacion: 'lucide:star' };
+  return map[type] ?? 'lucide:activity';
+}
+
+function typeBadge(type: string) {
+  const map: Record<string, string> = {
+    tarea:      'bg-brand-soft text-brand-dark',
+    quiz:       'bg-purple-100 text-purple-700',
+    evaluacion: 'bg-warning-soft text-warning-dark',
+  };
+  return map[type] ?? 'bg-neutral-100 text-neutral-600';
+}
+---
+
+<TeacherDashboardLayout
+  pageTitle={`Calificaciones - ${course.title}`}
+  breadcrumb="Libro de Calificaciones"
+  activeNav="cursos"
+>
+  <div class="-mx-6 lg:-mx-8 -mt-6 lg:-mt-8 flex flex-col">
+
+    <!-- BANNER HERO -->
+    <div class={`relative w-full bg-gradient-to-r ${course.bannerGradient} overflow-hidden`}>
+
+      <div class="relative px-6 lg:px-12 py-10">
+        <div class="max-w-[1200px] mx-auto">
+          <a href={TEACHER_ROUTES.courses} class="inline-flex items-center gap-1 text-white/60 hover:text-white text-xs font-semibold mb-4 transition-colors">
+            <Icon name="lucide:chevron-left" class="w-3.5 h-3.5" aria-hidden="true" />
+            Volver a mis cursos
+          </a>
+          <div class="flex flex-wrap items-end gap-x-6 gap-y-3">
+            <div class="flex-1 min-w-0">
+              <div class="flex items-center gap-2 mb-1">
+                <span class="text-xs font-bold text-white/60 uppercase tracking-widest">{course.code}</span>
+              </div>
+              <h1 class="text-2xl lg:text-3xl font-extrabold text-white tracking-tight truncate">{course.title}</h1>
+              {course.subtitle && <p class="text-sm text-white/70 mt-1 truncate">{course.subtitle}</p>}
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Tabs de navegación -->
+      <nav aria-label="Secciones del curso" class="relative z-10 border-t border-white/10">
+        <div class="flex items-center overflow-x-auto px-6 lg:px-12">
+          {courseTabs.map(tab => (
+            <a
+              href={tab.href}
+              role="tab"
+              aria-selected={tab.active}
+              class={[
+                'flex items-center gap-2 px-4 py-4 text-sm font-semibold whitespace-nowrap border-b-[3px] transition-all shrink-0',
+                tab.active
+                  ? 'border-white text-white'
+                  : 'border-transparent text-white/60 hover:text-white/90 hover:border-white/30',
+              ].join(' ')}
+            >
+              <Icon name={tab.icon} class="w-4 h-4" aria-hidden="true" />
+              {tab.label}
+            </a>
+          ))}
+        </div>
+      </nav>
+    </div>
+
+    <!-- CUERPO PRINCIPAL -->
+    <div class="flex-1 bg-page px-6 lg:px-8 py-8">
+      <div class="max-w-[1200px] mx-auto">
+
+        <div class="flex items-center justify-between mb-6">
+          <div>
+            <h2 class="text-xl font-extrabold text-heading">Libro de Calificaciones</h2>
+            <p class="text-sm text-subtle mt-1">Haz clic en una actividad para ver las entregas de los alumnos y calificar.</p>
+          </div>
+          <div class="flex items-center gap-2 text-xs text-subtle bg-card border border-edge rounded-xl px-4 py-2.5">
+            <Icon name="lucide:info" class="w-4 h-4 text-brand" aria-hidden="true" />
+            <span>Las actividades vencidas no aceptan nuevas entregas</span>
+          </div>
+        </div>
+
+        {weekGroups.length === 0 ? (
+          <div class="text-center py-20">
+            <div class="w-16 h-16 rounded-2xl bg-brand-soft flex items-center justify-center mx-auto mb-4">
+              <Icon name="lucide:book-open" class="w-7 h-7 text-brand-dark" aria-hidden="true" />
+            </div>
+            <h3 class="text-lg font-bold text-heading mb-2">Sin actividades aún</h3>
+            <p class="text-sm text-subtle max-w-xs mx-auto">Ve al contenido del curso y agrega tareas, quizzes o evaluaciones en las semanas.</p>
+            <a href={TEACHER_ROUTES.courseDetail(course.id)} class="inline-flex items-center gap-2 mt-5 px-5 py-2.5 rounded-xl bg-brand text-white text-sm font-bold hover:bg-brand-dark transition-colors">
+              <Icon name="lucide:layout-list" class="w-4 h-4" aria-hidden="true" />
+              Ver contenido del curso
+            </a>
+          </div>
+        ) : (
+          <div class="flex flex-col gap-6">
+            {weekGroups.map((week: any) => (
+              <section class="bg-card rounded-2xl border border-edge overflow-hidden">
+                <div class="flex items-center gap-3 px-5 py-4 border-b border-edge-soft bg-neutral-bg/30">
+                  <div class="w-8 h-8 rounded-xl bg-brand-soft flex items-center justify-center shrink-0">
+                    <span class="text-xs font-extrabold text-brand-dark">W{week.weekNumber}</span>
+                  </div>
+                  <h3 class="font-bold text-heading text-sm flex-1">{week.weekTitle}</h3>
+                  <span class="text-xs text-subtle font-medium">{week.activities.length} actividad{week.activities.length !== 1 ? 'es' : ''}</span>
+                </div>
+
+                <div class="divide-y divide-edge-soft">
+                  {week.activities.map((act: any) => {
+                    const isOverdue = act.dueDate && new Date(act.dueDate) < new Date();
+                    const dueDateStr = act.dueDate
+                      ? new Date(act.dueDate).toLocaleDateString('es-CO', { day: '2-digit', month: 'short', year: 'numeric' })
+                      : null;
+                    return (
+                      <button
+                        type="button"
+                        class="activity-row w-full flex items-center gap-4 px-5 py-4 hover:bg-neutral-bg/40 transition-colors text-left group cursor-pointer"
+                        data-item-id={act.id}
+                        data-item-title={act.title}
+                        data-description={act.description || ''}
+                        data-teacher-file={act.fileUrl || ''}
+                        data-max-score={act.maxScore}
+                        data-due-date={act.dueDate ?? ''}
+                        data-is-overdue={isOverdue ? 'true' : 'false'}
+                        data-course-id={courseId}
+                        aria-label={`Ver entregas de ${act.title}`}
+                      >
+                        <div class="w-10 h-10 rounded-xl bg-neutral-subtle flex items-center justify-center shrink-0">
+                          <Icon name={typeIcon(act.type)} class="w-5 h-5 text-subtle" aria-hidden="true" />
+                        </div>
+
+                        <div class="flex-1 min-w-0">
+                          <div class="flex items-center gap-2 flex-wrap">
+                            <span class="text-sm font-bold text-heading truncate">{act.title}</span>
+                            <span class={`text-[10px] font-bold px-2 py-0.5 rounded-full ${typeBadge(act.type)}`}>{act.type}</span>
+                            {isOverdue && (
+                              <span class="text-[10px] font-bold px-2 py-0.5 rounded-full bg-danger-soft text-danger-dark">Vencida</span>
+                            )}
+                          </div>
+                          <div class="flex items-center gap-4 mt-1">
+                            {dueDateStr && (
+                              <span class={`text-xs ${isOverdue ? 'text-danger font-semibold' : 'text-subtle'}`}>
+                                Vence: {dueDateStr}
+                              </span>
+                            )}
+                            <span class="text-xs text-subtle">
+                              {act.gradedCount}/{act.submissionsCount} calificados · {act.submissionsCount} entregas
+                            </span>
+                            {act.maxScore && (
+                              <span class="text-xs text-subtle">Puntaje máx: {act.maxScore}</span>
+                            )}
+                          </div>
+                        </div>
+
+                        <div class="hidden sm:flex items-center gap-3 shrink-0">
+                          <div class="w-24 h-1.5 bg-neutral-subtle rounded-full overflow-hidden">
+                            <div
+                              class={`h-full rounded-full ${act.gradedCount === act.submissionsCount && act.submissionsCount > 0 ? 'bg-success' : 'bg-brand-dark'}`}
+                              style={`width: ${act.submissionsCount > 0 ? Math.round((act.gradedCount / act.submissionsCount) * 100) : 0}%`}
+                            ></div>
+                          </div>
+                          <span class="text-xs text-subtle w-8 text-right">{act.submissionsCount > 0 ? Math.round((act.gradedCount / act.submissionsCount) * 100) : 0}%</span>
+                        </div>
+
+                        <Icon name="lucide:chevron-right" class="w-4 h-4 text-subtle group-hover:text-heading transition-colors shrink-0" aria-hidden="true" />
+                      </button>
+                    );
+                  })}
+                </div>
+              </section>
+            ))}
+          </div>
+        )}
+      </div>
+    </div>
+  </div>
+
+  <!-- ═══════════════════════════════════════════════════
+       PANEL DE ENTREGAS (Slide-over lateral)
+  ════════════════════════════════════════════════════ -->
+  <div id="submissions-panel" class="fixed inset-0 z-[70] flex pointer-events-none" role="dialog" aria-modal="true" aria-labelledby="panel-title">
+    <!-- Backdrop -->
+    <div id="panel-backdrop" class="absolute inset-0 bg-black/50 backdrop-blur-sm opacity-0 transition-opacity duration-300 cursor-pointer pointer-events-none"></div>
+    <!-- Panel lateral -->
+    <div id="panel-content" class="relative ml-auto w-full max-w-2xl bg-card shadow-2xl flex flex-col translate-x-full transition-transform duration-300 ease-in-out overflow-hidden">
+      <!-- Cabecera del panel -->
+      <div class="flex items-center gap-4 px-6 py-5 border-b border-edge-soft bg-neutral-bg/30 shrink-0">
+        <div>
+          <h2 id="panel-title" class="text-lg font-extrabold text-heading">Entregas</h2>
+          <p id="panel-subtitle" class="text-xs text-subtle mt-0.5"></p>
+        </div>
+        <button id="close-panel-btn" type="button" class="ml-auto p-2 rounded-full hover:bg-neutral-subtle text-subtle hover:text-heading transition-colors" aria-label="Cerrar panel">
+          <svg xmlns="http://www.w3.org/2000/svg" class="w-5 h-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+        </button>
+      </div>
+      <!-- Indicador de vencimiento -->
+      <div id="overdue-banner" class="hidden items-center gap-2 bg-danger-soft text-danger-dark px-6 py-2.5 text-xs font-bold border-b border-danger/20 shrink-0">
+        <svg xmlns="http://www.w3.org/2000/svg" class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>
+        Actividad vencida — ya no se aceptan nuevas entregas
+      </div>
+      <!-- Detalles de la actividad -->
+      <div id="panel-activity-details" class="px-6 py-4 border-b border-edge-soft bg-neutral-bg/10 shrink-0 hidden">
+        <h3 class="text-xs font-bold text-heading uppercase tracking-wider mb-2">Instrucciones de la actividad</h3>
+        <p id="panel-activity-desc" class="text-sm text-subtle whitespace-pre-wrap"></p>
+        <a id="panel-activity-file" href="#" target="_blank" class="mt-3 inline-flex items-center gap-2 px-3 py-1.5 rounded-lg border border-edge text-xs font-bold text-subtle hover:text-heading hover:bg-neutral-bg transition-colors hidden">
+          <svg xmlns="http://www.w3.org/2000/svg" class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/><polyline points="10 9 9 9 8 9"/></svg>
+          Ver recurso adjunto
+        </a>
+      </div>
+      <!-- Loading state -->
+      <div id="panel-loading" class="flex-1 flex items-center justify-center py-20">
+        <div class="flex flex-col items-center gap-3">
+          <svg class="w-8 h-8 animate-spin text-brand" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 12a9 9 0 1 1-6.219-8.56"/></svg>
+          <p class="text-sm text-subtle font-medium">Cargando entregas...</p>
+        </div>
+      </div>
+      <!-- Tabla de estudiantes -->
+      <div id="panel-table-wrap" class="flex-1 overflow-y-auto hidden">
+        <table class="w-full text-sm">
+          <thead class="sticky top-0 bg-card border-b border-edge-soft z-10">
+            <tr>
+              <th class="text-left px-4 py-3 text-xs font-bold text-subtle uppercase tracking-wide">Alumno</th>
+              <th class="text-left px-4 py-3 text-xs font-bold text-subtle uppercase tracking-wide">Estado</th>
+              <th class="text-left px-4 py-3 text-xs font-bold text-subtle uppercase tracking-wide">Entrega</th>
+              <th class="text-right px-4 py-3 text-xs font-bold text-subtle uppercase tracking-wide">Nota</th>
+              <th class="px-4 py-3"></th>
+            </tr>
+          </thead>
+          <tbody id="panel-tbody" class="divide-y divide-edge-soft"></tbody>
+        </table>
+      </div>
+      <!-- Empty state para el panel -->
+      <div id="panel-empty" class="flex-1 items-center justify-center py-20 hidden flex-col gap-3 text-center px-6">
+        <svg xmlns="http://www.w3.org/2000/svg" class="w-10 h-10 text-subtle mx-auto" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M9 11l3 3L22 4"/><path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"/></svg>
+        <p class="text-sm font-bold text-heading">Sin alumnos matriculados</p>
+        <p class="text-xs text-subtle">Agrega alumnos al curso para ver sus entregas aquí.</p>
+      </div>
+    </div>
+  </div>
+
+  <!-- ═══════════════════════════════════════════════════
+       MODAL: CALIFICAR / EDITAR NOTA
+  ════════════════════════════════════════════════════ -->
+  <div id="grade-modal" class="fixed inset-0 z-[90] flex items-center justify-center opacity-0 pointer-events-none transition-opacity duration-300" role="dialog" aria-modal="true" aria-labelledby="grade-modal-title">
+    <div id="grade-modal-backdrop" class="absolute inset-0 bg-black/50 backdrop-blur-sm cursor-pointer"></div>
+    <div id="grade-modal-panel" class="relative bg-card w-[90%] max-w-md rounded-3xl shadow-2xl border border-edge flex flex-col overflow-hidden transform scale-95 transition-transform duration-300">
+      <div class="px-6 py-5 border-b border-edge-soft flex items-center gap-3 bg-neutral-bg/30 shrink-0">
+        <div class="w-9 h-9 rounded-xl bg-brand-soft flex items-center justify-center shrink-0">
+          <svg xmlns="http://www.w3.org/2000/svg" class="w-4.5 h-4.5 text-brand-dark" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
+        </div>
+        <div class="flex-1 min-w-0">
+          <h2 id="grade-modal-title" class="text-base font-extrabold text-heading">Calificar entrega</h2>
+          <p id="grade-modal-student" class="text-xs text-subtle truncate mt-0.5"></p>
+        </div>
+        <button id="close-grade-modal" type="button" class="p-2 rounded-full hover:bg-neutral-subtle text-subtle hover:text-heading transition-colors" aria-label="Cerrar">
+          <svg xmlns="http://www.w3.org/2000/svg" class="w-5 h-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+        </button>
+      </div>
+      <div class="p-6 flex flex-col gap-4">
+        <input type="hidden" id="grade-submission-id" value="" />
+        <input type="hidden" id="grade-id" value="" />
+        <div>
+          <label for="grade-score" class="block text-xs font-bold text-heading mb-1.5">Nota <span id="grade-max-label" class="text-subtle font-medium">(0 - 100)</span></label>
+          <input
+            type="number"
+            id="grade-score"
+            min="0"
+            step="0.5"
+            class="w-full bg-neutral-bg border border-edge rounded-xl px-4 py-2.5 text-sm font-bold text-heading focus:outline-none focus:border-brand focus:ring-2 focus:ring-brand/20 transition-all"
+            placeholder="0"
+          />
+        </div>
+        <div>
+          <label for="grade-feedback" class="block text-xs font-bold text-heading mb-1.5">Retroalimentación <span class="text-subtle font-medium">(opcional)</span></label>
+          <textarea
+            id="grade-feedback"
+            rows="3"
+            class="w-full bg-neutral-bg border border-edge rounded-xl px-4 py-2.5 text-sm text-heading placeholder:text-subtle focus:outline-none focus:border-brand focus:ring-2 focus:ring-brand/20 transition-all resize-none"
+            placeholder="Escribe un comentario para el alumno..."
+          ></textarea>
+        </div>
+      </div>
+      <div class="px-6 py-4 border-t border-edge-soft flex items-center justify-end gap-3 bg-neutral-bg/20 shrink-0">
+        <button id="cancel-grade-modal" type="button" class="px-5 py-2.5 rounded-xl border border-edge text-sm font-bold text-subtle hover:bg-neutral-subtle hover:text-heading transition-colors">Cancelar</button>
+        <button id="save-grade-btn" type="button" class="flex items-center gap-2 px-6 py-2.5 rounded-xl bg-brand text-white text-sm font-bold hover:bg-brand-dark transition-colors shadow-sm disabled:opacity-60">
+          <span id="save-grade-label">Guardar nota</span>
+          <svg id="save-grade-spinner" class="w-4 h-4 animate-spin hidden" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 12a9 9 0 1 1-6.219-8.56"/></svg>
+        </button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ═══════════════════════════════════════════════════
+       MODAL: VER ENTREGA (Previsualizador)
+  ════════════════════════════════════════════════════ -->
+  <div id="view-modal" class="fixed inset-0 z-[90] flex items-center justify-center opacity-0 pointer-events-none transition-opacity duration-300" role="dialog" aria-modal="true">
+    <div id="view-modal-backdrop" class="absolute inset-0 bg-black/60 backdrop-blur-sm cursor-pointer"></div>
+    <div id="view-modal-panel" class="relative bg-card w-[95vw] max-w-4xl h-[85vh] rounded-3xl shadow-2xl border border-edge flex flex-col overflow-hidden transform scale-95 transition-transform duration-300">
+      <div class="flex items-center gap-3 px-6 py-4 border-b border-edge-soft bg-neutral-bg/30 shrink-0">
+        <div class="flex-1 min-w-0">
+          <h2 id="view-modal-title" class="font-bold text-heading truncate"></h2>
+          <p id="view-modal-meta" class="text-xs text-subtle mt-0.5"></p>
+        </div>
+        <a id="view-modal-download" href="#" target="_blank" rel="noopener noreferrer" class="flex items-center gap-1.5 px-3 py-1.5 rounded-xl border border-edge text-xs font-bold text-subtle hover:text-heading hover:border-heading transition-colors">
+          <svg xmlns="http://www.w3.org/2000/svg" class="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+          Descargar
+        </a>
+        <button id="close-view-modal" type="button" class="p-2 rounded-full hover:bg-neutral-subtle text-subtle hover:text-heading transition-colors" aria-label="Cerrar">
+          <svg xmlns="http://www.w3.org/2000/svg" class="w-5 h-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+        </button>
+      </div>
+      <!-- Previsualizador -->
+      <div id="view-modal-body" class="flex-1 overflow-auto p-0">
+        <iframe id="view-iframe" class="w-full h-full border-0 hidden" title="Vista previa de la entrega"></iframe>
+        <div id="view-text-content" class="hidden p-6 text-sm text-heading leading-relaxed whitespace-pre-wrap font-mono bg-neutral-bg min-h-full"></div>
+        <div id="view-no-content" class="hidden flex-1 flex items-center justify-center py-20 text-center">
+          <div>
+            <svg xmlns="http://www.w3.org/2000/svg" class="w-10 h-10 text-subtle mx-auto mb-3" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>
+            <p class="text-sm text-subtle">No hay contenido para previsualizar</p>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Toast -->
+  <div id="grade-toast" class="fixed bottom-6 right-6 z-[100] flex items-center gap-3 bg-heading text-white px-5 py-3.5 rounded-2xl shadow-2xl translate-y-20 opacity-0 transition-all duration-500 pointer-events-none" role="status" aria-live="polite">
+    <div id="grade-toast-icon" class="w-7 h-7 rounded-full bg-success flex items-center justify-center shrink-0">
+      <svg xmlns="http://www.w3.org/2000/svg" class="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><polyline points="20 6 9 17 4 12"/></svg>
+    </div>
+    <p id="grade-toast-text" class="text-sm font-bold"></p>
+  </div>
+</TeacherDashboardLayout>
+
+<script define:vars={{ API_BASE, courseId }}>
+  // ─── HELPERS ────────────────────────────────────────────────────
+  const getToken = () => {
+    const m = document.cookie.match(/(?:^|; )ka_session=([^;]*)/);
+    return m ? decodeURIComponent(m[1]) : '';
+  };
+
+  function showToast(msg, isError = false) {
+    const toast = document.getElementById('grade-toast');
+    const text  = document.getElementById('grade-toast-text');
+    const icon  = document.getElementById('grade-toast-icon');
+    if (!toast || !text) return;
+    text.textContent = msg;
+    if (icon) icon.className = `w-7 h-7 rounded-full flex items-center justify-center shrink-0 ${isError ? 'bg-danger' : 'bg-success'}`;
+    toast.classList.remove('translate-y-20', 'opacity-0');
+    toast.classList.add('translate-y-0', 'opacity-100');
+    setTimeout(() => {
+      toast.classList.add('translate-y-20', 'opacity-0');
+      toast.classList.remove('translate-y-0', 'opacity-100');
+    }, 3500);
+  }
+
+  function getDocumentEmbedUrl(url) {
+    if (!url) return null;
+    const lower = url.toLowerCase();
+    if (lower.endsWith('.pdf') || lower.includes('/pdf')) return url;
+    if (/\.(docx?|xlsx?|pptx?)$/.test(lower)) {
+      return `https://view.officeapps.live.com/op/embed.aspx?src=${encodeURIComponent(url)}`;
+    }
+    return url;
+  }
+
+  // ─── PANEL DE ENTREGAS ──────────────────────────────────────────
+  const panel    = document.getElementById('submissions-panel');
+  const panelContent = document.getElementById('panel-content');
+  const backdrop = document.getElementById('panel-backdrop');
+  const loading  = document.getElementById('panel-loading');
+  const tableWrap= document.getElementById('panel-table-wrap');
+  const tbody    = document.getElementById('panel-tbody');
+  const emptyEl  = document.getElementById('panel-empty');
+  const overdueBanner = document.getElementById('overdue-banner');
+  const panelActivityDetails = document.getElementById('panel-activity-details');
+  const panelActivityDesc = document.getElementById('panel-activity-desc');
+  const panelActivityFile = document.getElementById('panel-activity-file');
+
+  let currentMaxScore = 100;
+
+  function openPanel() {
+    panel.classList.remove('pointer-events-none');
+    backdrop.classList.remove('opacity-0', 'pointer-events-none');
+    backdrop.classList.add('opacity-100', 'pointer-events-auto');
+    panelContent.classList.remove('translate-x-full');
+    document.body.style.overflow = 'hidden';
+  }
+  function closePanel() {
+    panel.classList.add('pointer-events-none');
+    backdrop.classList.add('opacity-0', 'pointer-events-none');
+    backdrop.classList.remove('opacity-100', 'pointer-events-auto');
+    panelContent.classList.add('translate-x-full');
+    document.body.style.overflow = '';
+  }
+
+  document.getElementById('close-panel-btn')?.addEventListener('click', closePanel);
+  backdrop?.addEventListener('click', closePanel);
+
+  // Render de filas del panel
+  function renderSubmissions(students, isOverdue) {
+    tbody.innerHTML = '';
+    students.forEach(row => {
+      const { student, submission, grade } = row;
+      const hasSubmission = !!submission;
+      const hasGrade = !!grade;
+      const isLate = submission?.isLate;
+
+      const statusBadge = !hasSubmission
+        ? '<span class="inline-flex items-center gap-1 text-[10px] font-bold px-2 py-0.5 rounded-full bg-neutral-100 text-neutral-500">Sin entregar</span>'
+        : isLate
+          ? '<span class="inline-flex items-center gap-1 text-[10px] font-bold px-2 py-0.5 rounded-full bg-warning-soft text-warning-dark">Tardía</span>'
+          : '<span class="inline-flex items-center gap-1 text-[10px] font-bold px-2 py-0.5 rounded-full bg-success-soft text-success-dark">Entregado</span>';
+
+      const submittedDate = submission?.submittedAt
+        ? new Date(submission.submittedAt).toLocaleDateString('es-CO', { day: '2-digit', month: '2-digit', year: '2-digit', hour: '2-digit', minute: '2-digit' })
+        : '—';
+
+      const scoreDisplay = hasGrade
+        ? `<span class="font-bold text-heading">${Number(grade.score).toFixed(1)}</span><span class="text-subtle">/${currentMaxScore}</span>`
+        : '<span class="text-subtle">—</span>';
+
+      const viewBtn = hasSubmission
+        ? `<button type="button" class="view-submission-btn text-xs font-bold text-brand hover:text-brand-dark transition-colors" 
+             data-student-name="${student.fullName.replace(/"/g,'&quot;')}" 
+             data-file-url="${(submission.fileUrl || '').replace(/"/g,'&quot;')}" 
+             data-text-content="${(submission.textContent || '').replace(/"/g,'&quot;')}"
+             data-status="${submission.status}"
+             data-submitted="${submittedDate}">Ver entrega</button>`
+        : '';
+
+      const gradeBtn = hasSubmission
+        ? `<button type="button" class="grade-btn ml-3 text-xs font-bold ${hasGrade ? 'text-subtle hover:text-heading' : 'text-brand hover:text-brand-dark'} transition-colors"
+             data-submission-id="${submission.id}"
+             data-grade-id="${grade?.id || ''}"
+             data-score="${grade?.score ?? ''}"
+             data-feedback="${(grade?.feedback || '').replace(/"/g,'&quot;')}"
+             data-student-name="${student.fullName.replace(/"/g,'&quot;')}"
+           >${hasGrade ? 'Editar nota' : 'Calificar'}</button>`
+        : '';
+
+      const tr = document.createElement('tr');
+      tr.className = 'hover:bg-neutral-bg/40 transition-colors';
+      tr.innerHTML = `
+        <td class="px-4 py-3">
+          <div class="font-semibold text-heading text-sm">${student.fullName}</div>
+          <div class="text-xs text-subtle">${student.email}</div>
+        </td>
+        <td class="px-4 py-3">${statusBadge}</td>
+        <td class="px-4 py-3 text-xs text-subtle">${submittedDate}</td>
+        <td class="px-4 py-3 text-right text-sm">${scoreDisplay}</td>
+        <td class="px-4 py-3 text-right whitespace-nowrap">${viewBtn}${gradeBtn}</td>
+      `;
+      tbody.appendChild(tr);
+    });
+    bindPanelButtons();
+  }
+
+  async function loadSubmissions(itemId, itemTitle, maxScore, isOverdue, description, teacherFile) {
+    currentMaxScore = maxScore;
+    document.getElementById('panel-title').textContent = itemTitle;
+    document.getElementById('panel-subtitle').textContent = `${isOverdue ? '🔴 Actividad vencida · ' : ''}Cargando...`;
+    
+    if (description || teacherFile) {
+      panelActivityDetails.classList.remove('hidden');
+      panelActivityDesc.textContent = description || 'Sin instrucciones adicionales.';
+      if (teacherFile) {
+        panelActivityFile.href = teacherFile;
+        panelActivityFile.classList.remove('hidden');
+        panelActivityFile.classList.add('inline-flex');
+      } else {
+        panelActivityFile.classList.add('hidden');
+        panelActivityFile.classList.remove('inline-flex');
+      }
+    } else {
+      panelActivityDetails.classList.add('hidden');
+    }
+
+    overdueBanner.classList.toggle('hidden', !isOverdue);
+    overdueBanner.classList.toggle('flex', isOverdue);
+    loading.classList.remove('hidden');
+    tableWrap.classList.add('hidden');
+    emptyEl.classList.add('hidden');
+    openPanel();
+
+    try {
+      const token = getToken();
+      const res = await fetch(`${API_BASE}/submissions/item/${itemId}/students?courseId=${courseId}`, {
+        headers: { Authorization: `Bearer ${token}` }
+      });
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      const payload = await res.json();
+      const students = payload.data || payload;
+
+      loading.classList.add('hidden');
+      document.getElementById('panel-subtitle').textContent = `${students.length} alumnos · ${students.filter(s => s.submission).length} entregas`;
+
+      if (students.length === 0) {
+        emptyEl.classList.remove('hidden');
+        emptyEl.classList.add('flex');
+      } else {
+        tableWrap.classList.remove('hidden');
+        renderSubmissions(students, isOverdue);
+      }
+    } catch (err) {
+      console.error(err);
+      loading.classList.add('hidden');
+      document.getElementById('panel-subtitle').textContent = 'Error al cargar entregas';
+      showToast('Error al cargar las entregas', true);
+    }
+  }
+
+  // Activity rows click
+  document.querySelectorAll('.activity-row').forEach(row => {
+    row.addEventListener('click', () => {
+      const { itemId, itemTitle, maxScore, isOverdue, description, teacherFile } = row.dataset;
+      loadSubmissions(itemId, itemTitle, Number(maxScore) || 100, isOverdue === 'true', description, teacherFile);
+    });
+  });
+
+  // ─── MODAL CALIFICAR ────────────────────────────────────────────
+  const gradeModal      = document.getElementById('grade-modal');
+  const gradeModalPanel = document.getElementById('grade-modal-panel');
+  const gradeBackdrop   = document.getElementById('grade-modal-backdrop');
+
+  function openGradeModal() {
+    gradeModal.classList.remove('opacity-0', 'pointer-events-none');
+    gradeModalPanel.classList.remove('scale-95');
+    gradeModalPanel.classList.add('scale-100');
+  }
+  function closeGradeModal() {
+    gradeModal.classList.add('opacity-0', 'pointer-events-none');
+    gradeModalPanel.classList.remove('scale-100');
+    gradeModalPanel.classList.add('scale-95');
+  }
+
+  gradeBackdrop?.addEventListener('click', closeGradeModal);
+  document.getElementById('cancel-grade-modal')?.addEventListener('click', closeGradeModal);
+  document.getElementById('close-grade-modal')?.addEventListener('click', closeGradeModal);
+
+  document.getElementById('save-grade-btn')?.addEventListener('click', async () => {
+    const submissionId = document.getElementById('grade-submission-id').value;
+    const gradeId      = document.getElementById('grade-id').value;
+    const score        = parseFloat(document.getElementById('grade-score').value);
+    const feedback     = document.getElementById('grade-feedback').value;
+
+    if (isNaN(score) || score < 0) { showToast('Ingresa una nota válida', true); return; }
+    if (score > currentMaxScore) { showToast(`La nota no puede superar ${currentMaxScore}`, true); return; }
+
+    const saveBtn = document.getElementById('save-grade-btn');
+    const label   = document.getElementById('save-grade-label');
+    const spinner = document.getElementById('save-grade-spinner');
+    saveBtn.disabled = true;
+    label.classList.add('hidden');
+    spinner.classList.remove('hidden');
+
+    try {
+      const token = getToken();
+      const isEdit = !!gradeId;
+      const url  = isEdit ? `${API_BASE}/grades/${gradeId}` : `${API_BASE}/grades`;
+      const method = isEdit ? 'PATCH' : 'POST';
+      const body = isEdit ? { score, feedback } : { submissionId, score, feedback };
+
+      const res = await fetch(url, {
+        method,
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+        body: JSON.stringify(body),
+      });
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+
+      closeGradeModal();
+      showToast(isEdit ? 'Nota actualizada correctamente' : 'Nota guardada correctamente');
+      // Reload panel submissions
+      const panelTitle = document.getElementById('panel-title').textContent;
+      // We can't easily reload without the itemId, so just refresh panel state
+      setTimeout(() => { window.location.reload(); }, 1000);
+    } catch (err) {
+      console.error(err);
+      showToast('Error al guardar la nota', true);
+    } finally {
+      saveBtn.disabled = false;
+      label.classList.remove('hidden');
+      spinner.classList.add('hidden');
+    }
+  });
+
+  // ─── MODAL VER ENTREGA ──────────────────────────────────────────
+  const viewModal      = document.getElementById('view-modal');
+  const viewModalPanel = document.getElementById('view-modal-panel');
+  const viewBackdrop   = document.getElementById('view-modal-backdrop');
+
+  function openViewModal(studentName, fileUrl, textContent, status, submittedAt) {
+    viewModal.classList.remove('opacity-0', 'pointer-events-none');
+    viewModalPanel.classList.remove('scale-95');
+    viewModalPanel.classList.add('scale-100');
+    document.getElementById('view-modal-title').textContent = `Entrega de ${studentName}`;
+    document.getElementById('view-modal-meta').textContent = `Estado: ${status} · Enviado: ${submittedAt}`;
+
+    const iframe      = document.getElementById('view-iframe');
+    const textEl      = document.getElementById('view-text-content');
+    const noContentEl = document.getElementById('view-no-content');
+    const downloadBtn = document.getElementById('view-modal-download');
+
+    iframe.classList.add('hidden');
+    textEl.classList.add('hidden');
+    noContentEl.classList.add('hidden');
+    noContentEl.classList.remove('flex');
+
+    if (fileUrl) {
+      downloadBtn.href = fileUrl;
+      downloadBtn.classList.remove('hidden');
+      const lower = fileUrl.toLowerCase();
+      if (lower.endsWith('.pdf') || lower.includes('/pdf')) {
+        iframe.src = fileUrl;
+      } else if (/\.(docx?|xlsx?|pptx?)/.test(lower)) {
+        iframe.src = `https://view.officeapps.live.com/op/embed.aspx?src=${encodeURIComponent(fileUrl)}`;
+      } else {
+        iframe.src = fileUrl;
+      }
+      iframe.classList.remove('hidden');
+    } else if (textContent) {
+      textEl.textContent = textContent;
+      textEl.classList.remove('hidden');
+      downloadBtn.classList.add('hidden');
+    } else {
+      noContentEl.classList.remove('hidden');
+      noContentEl.classList.add('flex');
+      downloadBtn.classList.add('hidden');
+    }
+  }
+
+  function closeViewModal() {
+    viewModal.classList.add('opacity-0', 'pointer-events-none');
+    viewModalPanel.classList.remove('scale-100');
+    viewModalPanel.classList.add('scale-95');
+    const iframe = document.getElementById('view-iframe');
+    iframe.src = '';
+  }
+
+  viewBackdrop?.addEventListener('click', closeViewModal);
+  document.getElementById('close-view-modal')?.addEventListener('click', closeViewModal);
+
+  // ─── BINDING DE BOTONES DEL PANEL ───────────────────────────────
+  function bindPanelButtons() {
+    document.querySelectorAll('.grade-btn').forEach(btn => {
+      btn.addEventListener('click', () => {
+        document.getElementById('grade-submission-id').value = btn.dataset.submissionId;
+        document.getElementById('grade-id').value            = btn.dataset.gradeId;
+        document.getElementById('grade-score').value         = btn.dataset.score;
+        document.getElementById('grade-feedback').value      = btn.dataset.feedback;
+        document.getElementById('grade-modal-student').textContent = btn.dataset.studentName;
+        document.getElementById('grade-max-label').textContent = `(0 - ${currentMaxScore})`;
+        document.getElementById('grade-score').max = String(currentMaxScore);
+        document.getElementById('save-grade-label').textContent = btn.dataset.gradeId ? 'Actualizar nota' : 'Guardar nota';
+        openGradeModal();
+      });
+    });
+
+    document.querySelectorAll('.view-submission-btn').forEach(btn => {
+      btn.addEventListener('click', () => {
+        openViewModal(
+          btn.dataset.studentName,
+          btn.dataset.fileUrl,
+          btn.dataset.textContent,
+          btn.dataset.status,
+          btn.dataset.submitted
+        );
+      });
+    });
+  }
+
+  // Escape key
+  document.addEventListener('keydown', e => {
+    if (e.key !== 'Escape') return;
+    if (!gradeModal.classList.contains('opacity-0')) closeGradeModal();
+    else if (!viewModal.classList.contains('opacity-0')) closeViewModal();
+    else closePanel();
+  });
+</script>

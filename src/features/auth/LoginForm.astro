@@ -1,0 +1,438 @@
+---
+/**
+ * LoginForm.astro — Feature: Autenticación
+ * ============================================================
+ * Formulario completo de inicio de sesión.
+ * Pertenece a src/features/auth/ porque contiene lógica de negocio
+ * (cambio de perfil, gestión de sesión demo, animación de submit).
+ * Consume tokens del Design System de global.css vía clases Tailwind.
+ * Sin etiquetas <style> ni CSS externo — solo Tailwind CSS.
+ */
+import { APP_ROUTES } from '../../core/config/paths';
+---
+
+<!-- ═══════════════════════════════════════════════════
+     CARD: Formulario de Login
+     Card centrada que contiene todo el panel de autenticación.
+═══════════════════════════════════════════════════ -->
+<div class="flex flex-col h-full justify-center">
+
+  <!-- Card principal -->
+  <div class="bg-card rounded-3xl shadow-xl border border-edge-soft p-8 lg:p-10 w-full max-w-[480px] mx-auto flex flex-col gap-6">
+
+    <!-- ── Header del card ─────────────────────────── -->
+    <div class="flex items-center justify-between">
+
+      <!-- Logo brand -->
+      <div class="flex items-center gap-3">
+        <div class="bg-sidebar rounded-xl w-11 h-11 flex items-center justify-center flex-shrink-0">
+          <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+            <path d="M2 3h6a4 4 0 0 1 4 4v14a3 3 0 0 0-3-3H2z"/>
+            <path d="M22 3h-6a4 4 0 0 0-4 4v14a3 3 0 0 1 3-3h7z"/>
+          </svg>
+        </div>
+        <div>
+          <span class="block text-[1.05rem] font-bold leading-tight" style="color: var(--color-brand-primary);">
+            <em class="not-italic font-normal text-subtle">Miss</em> Kelly Q.
+          </span>
+          <span class="block text-[0.68rem] text-muted font-normal mt-0.5">
+            Campus Virtual
+          </span>
+        </div>
+      </div>
+
+      <!-- Selector de idioma -->
+      <div
+        class="flex bg-neutral-subtle rounded-lg p-0.5 gap-0.5"
+        role="group"
+        aria-label="Selector de idioma"
+      >
+        <button
+          type="button"
+          class="lang-btn text-[0.68rem] font-bold tracking-wide px-3 py-1.5 rounded-md bg-card text-heading shadow-sm transition-all duration-200"
+          id="lang-es-btn"
+          aria-pressed="true"
+        >
+          ES
+        </button>
+        <button
+          type="button"
+          class="lang-btn text-[0.68rem] font-bold tracking-wide px-3 py-1.5 rounded-md text-subtle hover:text-body transition-all duration-200"
+          id="lang-en-btn"
+          aria-pressed="false"
+        >
+          EN
+        </button>
+      </div>
+
+    </div>
+
+    <!-- ── Bienvenida ──────────────────────────────── -->
+    <div>
+      <h1 class="text-[1.75rem] font-extrabold text-heading leading-tight mb-1">
+        ¡Bienvenido de vuelta!
+      </h1>
+      <p class="text-sm text-subtle leading-relaxed">
+        Ingresa tus credenciales para acceder a tus lecciones.
+      </p>
+    </div>
+
+    <!-- ── Selector de perfil ─────────────────────── -->
+    <div class="flex flex-col gap-2">
+      <span class="text-[0.62rem] font-bold tracking-[0.1em] text-subtle uppercase">
+        Selecciona tu perfil de ingreso:
+      </span>
+      <div
+        class="grid grid-cols-2 bg-neutral-subtle rounded-[0.875rem] p-1 gap-1"
+        role="group"
+        aria-label="Tipo de perfil de ingreso"
+      >
+        <button
+          type="button"
+          class="profile-btn flex items-center justify-center gap-2 py-2.5 px-4 rounded-[0.625rem] text-sm font-semibold bg-sidebar text-white shadow-md transition-all duration-250"
+          id="profile-btn-estudiante"
+          aria-pressed="true"
+          data-profile="estudiante"
+        >
+          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+            <path d="M2 3h6a4 4 0 0 1 4 4v14a3 3 0 0 0-3-3H2z"/>
+            <path d="M22 3h-6a4 4 0 0 0-4 4v14a3 3 0 0 1 3-3h7z"/>
+          </svg>
+          Estudiante
+        </button>
+        <button
+          type="button"
+          class="profile-btn flex items-center justify-center gap-2 py-2.5 px-4 rounded-[0.625rem] text-sm font-semibold text-subtle hover:bg-neutral-light transition-all duration-250"
+          id="profile-btn-profesor"
+          aria-pressed="false"
+          data-profile="profesor"
+        >
+          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+            <circle cx="12" cy="8" r="5"/>
+            <path d="M3 21v-2a7 7 0 0 1 14 0v2"/>
+            <path d="M16 11h6M19 8v6"/>
+          </svg>
+          Profesor
+        </button>
+      </div>
+    </div>
+
+    <!-- ── Formulario ──────────────────────────────── -->
+    <form class="flex flex-col gap-4" id="login-form" novalidate>
+
+      <!-- Correo / Usuario -->
+      <div class="flex flex-col gap-1.5">
+        <label
+          class="text-[0.62rem] font-bold tracking-[0.1em] text-subtle uppercase"
+          for="login-email"
+        >
+          Correo institucional o usuario
+        </label>
+        <div class="relative flex items-center">
+          <span class="absolute left-4 text-muted pointer-events-none" aria-hidden="true">
+            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <rect width="20" height="16" x="2" y="4" rx="2"/>
+              <path d="m22 7-8.97 5.7a1.94 1.94 0 0 1-2.06 0L2 7"/>
+            </svg>
+          </span>
+          <input
+            type="email"
+            id="login-email"
+            name="email"
+            class="w-full pl-10 pr-4 py-3 rounded-xl border border-edge bg-neutral-bg text-sm text-body placeholder:text-faint outline-none transition-all duration-200 focus:border-brand focus:bg-card focus:ring-2 focus:ring-brand/10"
+            placeholder="estudiante@misskellyq.com"
+            autocomplete="email"
+            required
+          />
+        </div>
+      </div>
+
+      <!-- Contraseña -->
+      <div class="flex flex-col gap-1.5">
+        <div class="flex items-center justify-between">
+          <label
+            class="text-[0.62rem] font-bold tracking-[0.1em] text-subtle uppercase"
+            for="login-password"
+          >
+            Contraseña
+          </label>
+          <a
+            href="#"
+            class="text-[0.72rem] font-semibold text-brand hover:text-brand-dark transition-colors duration-200"
+            id="forgot-password-link"
+          >
+            ¿Olvidaste tu contraseña?
+          </a>
+        </div>
+        <div class="relative flex items-center">
+          <span class="absolute left-4 text-muted pointer-events-none" aria-hidden="true">
+            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <rect width="18" height="11" x="3" y="11" rx="2" ry="2"/>
+              <path d="M7 11V7a5 5 0 0 1 10 0v4"/>
+            </svg>
+          </span>
+          <input
+            type="password"
+            id="login-password"
+            name="password"
+            class="w-full pl-10 pr-12 py-3 rounded-xl border border-edge bg-neutral-bg text-sm text-body placeholder:text-faint outline-none transition-all duration-200 focus:border-brand focus:bg-card focus:ring-2 focus:ring-brand/10"
+            placeholder="••••••••••••"
+            autocomplete="current-password"
+            required
+          />
+          <button
+            type="button"
+            class="absolute right-4 text-muted hover:text-subtle transition-colors duration-200"
+            id="toggle-password-btn"
+            aria-label="Mostrar u ocultar contraseña"
+          >
+            <svg id="eye-open-icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <path d="M2 12s3-7 10-7 10 7 10 7-3 7-10 7-10-7-10-7Z"/>
+              <circle cx="12" cy="12" r="3"/>
+            </svg>
+            <svg id="eye-closed-icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="hidden">
+              <path d="M9.88 9.88a3 3 0 1 0 4.24 4.24"/>
+              <path d="M10.73 5.08A10.43 10.43 0 0 1 12 5c7 0 10 7 10 7a13.16 13.16 0 0 1-1.67 2.68"/>
+              <path d="M6.61 6.61A13.526 13.526 0 0 0 2 12s3 7 10 7a9.74 9.74 0 0 0 5.39-1.61"/>
+              <line x1="2" x2="22" y1="2" y2="22"/>
+            </svg>
+          </button>
+        </div>
+      </div>
+
+      <!-- Opciones: Recordar sesión + Demo -->
+      <div class="flex items-center justify-between flex-wrap gap-2">
+        <label class="flex items-center gap-2 cursor-pointer select-none" for="remember-session">
+          <input
+            type="checkbox"
+            id="remember-session"
+            name="remember"
+            class="sr-only peer"
+          />
+          <span class="w-4.5 h-4.5 rounded-md border border-edge bg-card flex items-center justify-center flex-shrink-0 transition-all duration-200 peer-checked:bg-brand peer-checked:border-brand relative">
+            <svg class="hidden peer-checked:block w-2.5 h-2.5 text-white absolute" viewBox="0 0 10 8" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+              <path d="M1 4l2.5 2.5L9 1"/>
+            </svg>
+          </span>
+          <span class="text-[0.8rem] font-medium text-body">Mantener mi sesión activa</span>
+        </label>
+        <a
+          href={APP_ROUTES.home}
+          class="text-[0.72rem] font-medium text-muted underline underline-offset-2 hover:text-subtle transition-colors duration-200"
+          id="demo-access-link"
+        >
+        </a>
+      </div> 
+
+      <!-- Mensaje de Error -->
+      <div id="login-error-alert" class="hidden bg-danger-soft border border-danger-soft text-danger-dark rounded-xl p-4 text-sm font-medium flex items-center gap-2" role="alert">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <circle cx="12" cy="12" r="10"/>
+          <line x1="12" x2="12" y1="8" y2="12"/>
+          <line x1="12" x2="12.01" y1="16" y2="16"/>
+        </svg>
+        <span id="login-error-message"></span>
+      </div>
+
+      <!-- Botón submit principal -->
+      <button
+        type="submit"
+        class="flex items-center justify-center gap-2.5 w-full py-3.5 px-6 bg-sidebar hover:bg-sidebar/90 text-white rounded-[0.875rem] text-[0.95rem] font-bold tracking-[0.01em] transition-all duration-250 shadow-lg shadow-black/20 hover:-translate-y-px hover:shadow-xl hover:shadow-black/25 active:translate-y-0 disabled:opacity-60 disabled:cursor-not-allowed disabled:translate-y-0"
+        id="login-submit-btn"
+      >
+        <span id="login-btn-label">Acceder al Campus Virtual</span>
+        <span id="login-btn-spinner" class="hidden items-center" aria-live="polite">
+          <svg class="animate-spin" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" aria-label="Cargando">
+            <path d="M21 12a9 9 0 1 1-6.219-8.56"/>
+          </svg>
+        </span>
+        <svg id="login-btn-arrow" width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+          <path d="M5 12h14"/>
+          <path d="m12 5 7 7-7 7"/>
+        </svg>
+      </button>
+
+    </form>
+
+    <!-- ── Footer del card ─────────────────────────── -->
+    <footer class="pt-5 border-t border-edge-soft flex items-center justify-between flex-wrap gap-3">
+      <p class="text-[0.72rem] italic text-muted leading-snug max-w-[200px]">
+        "Building faith &amp; fluency, one lesson at a time."
+      </p>
+      <nav class="flex items-center gap-2" aria-label="Soporte y legal">
+        <a href="#" class="text-[0.68rem] text-muted hover:text-subtle transition-colors font-medium" id="footer-parents-link">Soporte a Padres</a>
+        <span class="text-faint text-[0.6rem]" aria-hidden="true">·</span>
+        <a href="#" class="text-[0.68rem] text-muted hover:text-subtle transition-colors font-medium" id="footer-support-link">Ayuda Técnica</a>
+        <span class="text-faint text-[0.6rem]" aria-hidden="true">·</span>
+        <a href="#" class="text-[0.68rem] text-muted hover:text-subtle transition-colors font-medium" id="footer-privacy-link">Privacidad</a>
+      </nav>
+    </footer>
+
+  </div>
+</div>
+
+<script>
+  // ── Cambio de perfil de ingreso ───────────────────────────────
+  const profileButtons = document.querySelectorAll<HTMLButtonElement>('.profile-btn');
+
+  profileButtons.forEach((button) => {
+    button.addEventListener('click', () => {
+      const selectedProfile = button.dataset.profile ?? 'estudiante';
+
+      profileButtons.forEach((btn) => {
+        const isSelected = btn.dataset.profile === selectedProfile;
+        btn.classList.toggle('bg-sidebar', isSelected);
+        btn.classList.toggle('text-white', isSelected);
+        btn.classList.toggle('shadow-md', isSelected);
+        btn.classList.toggle('text-subtle', !isSelected);
+        btn.classList.toggle('hover:bg-neutral-light', !isSelected);
+        btn.setAttribute('aria-pressed', String(isSelected));
+      });
+
+      const emailInput = document.getElementById('login-email') as HTMLInputElement;
+      const submitLabel = document.getElementById('login-btn-label') as HTMLSpanElement;
+
+      if (selectedProfile === 'estudiante') {
+        emailInput.placeholder = 'estudiante@misskellyq.com';
+        submitLabel.textContent = 'Acceder al Campus Virtual';
+      } else {
+        emailInput.placeholder = 'profesor@misskellyq.com';
+        submitLabel.textContent = 'Acceder al Portal Docente';
+      }
+    });
+  });
+
+  // ── Toggle visibilidad de contraseña ─────────────────────────
+  const togglePasswordBtn = document.getElementById('toggle-password-btn') as HTMLButtonElement;
+  const loginPasswordInput = document.getElementById('login-password') as HTMLInputElement;
+  const eyeOpenIcon = document.getElementById('eye-open-icon') as SVGSVGElement;
+  const eyeClosedIcon = document.getElementById('eye-closed-icon') as SVGSVGElement;
+
+  togglePasswordBtn?.addEventListener('click', () => {
+    const isHidden = loginPasswordInput.type === 'password';
+    loginPasswordInput.type = isHidden ? 'text' : 'password';
+    eyeOpenIcon.classList.toggle('hidden', isHidden);
+    eyeClosedIcon.classList.toggle('hidden', !isHidden);
+  });
+
+  // ── Selector de idioma ────────────────────────────────────────
+  const langEsBtn = document.getElementById('lang-es-btn') as HTMLButtonElement;
+  const langEnBtn = document.getElementById('lang-en-btn') as HTMLButtonElement;
+
+  function setActiveLanguage(activeLang: 'es' | 'en') {
+    const isEs = activeLang === 'es';
+    langEsBtn.classList.toggle('bg-card', isEs);
+    langEsBtn.classList.toggle('text-heading', isEs);
+    langEsBtn.classList.toggle('shadow-sm', isEs);
+    langEsBtn.classList.toggle('text-subtle', !isEs);
+    langEsBtn.setAttribute('aria-pressed', String(isEs));
+
+    langEnBtn.classList.toggle('bg-card', !isEs);
+    langEnBtn.classList.toggle('text-heading', !isEs);
+    langEnBtn.classList.toggle('shadow-sm', !isEs);
+    langEnBtn.classList.toggle('text-subtle', isEs);
+    langEnBtn.setAttribute('aria-pressed', String(!isEs));
+  }
+
+  langEsBtn?.addEventListener('click', () => setActiveLanguage('es'));
+  langEnBtn?.addEventListener('click', () => setActiveLanguage('en'));
+
+  // ── Checkbox personalizado (peer no funciona sin JS en Astro) ─
+  const rememberCheckbox = document.getElementById('remember-session') as HTMLInputElement;
+  const checkIcon = document.querySelector<SVGSVGElement>('#remember-session ~ span svg');
+  const checkSpan = document.querySelector<HTMLSpanElement>('#remember-session ~ span');
+
+  rememberCheckbox?.addEventListener('change', () => {
+    const isChecked = rememberCheckbox.checked;
+    if (checkSpan) {
+      checkSpan.style.backgroundColor = isChecked ? 'var(--color-brand-primary)' : '';
+      checkSpan.style.borderColor = isChecked ? 'var(--color-brand-primary)' : '';
+    }
+    if (checkIcon) checkIcon.classList.toggle('hidden', !isChecked);
+  });
+
+  // ── Submit: autenticación real contra POST /api/v1/auth/login ──
+  const loginForm = document.getElementById('login-form') as HTMLFormElement;
+  const loginSubmitBtn = document.getElementById('login-submit-btn') as HTMLButtonElement;
+  const loginBtnLabel = document.getElementById('login-btn-label') as HTMLSpanElement;
+  const loginBtnSpinner = document.getElementById('login-btn-spinner') as HTMLSpanElement;
+  const loginBtnArrow = document.getElementById('login-btn-arrow') as SVGSVGElement;
+
+  // Elemento de error (se muestra si las credenciales son incorrectas)
+  const errorAlert = document.getElementById('login-error-alert') as HTMLDivElement;
+  const errorMessage = document.getElementById('login-error-message') as HTMLSpanElement;
+
+  function setLoading(loading: boolean): void {
+    loginSubmitBtn.disabled = loading;
+    loginBtnLabel.classList.toggle('hidden', loading);
+    loginBtnSpinner.classList.toggle('hidden', !loading);
+    loginBtnSpinner.classList.toggle('flex', loading);
+    loginBtnArrow.classList.toggle('hidden', loading);
+  }
+
+  function showError(msg: string): void {
+    errorMessage.textContent = msg;
+    errorAlert.classList.remove('hidden');
+  }
+
+  function hideError(): void {
+    errorAlert.classList.add('hidden');
+  }
+
+  loginForm?.addEventListener('submit', async (event: SubmitEvent) => {
+    event.preventDefault();
+    hideError();
+
+    const formData = new FormData(loginForm);
+    const email    = (formData.get('email')    as string | null) ?? '';
+    const password = (formData.get('password') as string | null) ?? '';
+    const keepSession = rememberCheckbox?.checked ?? false;
+
+    if (!email || !password) {
+      showError('Por favor ingresa tu correo y contraseña.');
+      return;
+    }
+
+    setLoading(true);
+
+    try {
+      // ── Usar el servicio centralizado de auth (nunca fetch directo) ──
+      // authLogin usa apiClient.ts que lee PUBLIC_API_URL desde env.ts
+      const { authLogin } = await import('/src/core/services/auth.service');
+
+      // Encontrar el perfil seleccionado (estudiante o profesor)
+      const activeProfileBtn = document.querySelector('.profile-btn.bg-sidebar') as HTMLButtonElement;
+      const requestedRole = (activeProfileBtn?.dataset.profile ?? 'estudiante') as 'profesor' | 'estudiante';
+
+      const { accessToken, refreshToken, role } = await authLogin({ email, password, requestedRole });
+
+      // ── Escribir cookies (leídas por el middleware server-side) ──
+      const maxAge  = keepSession ? 60 * 60 * 24 * 7 : 0; // 7 días o sesión
+      const expires = keepSession ? `; max-age=${maxAge}` : '';
+
+      document.cookie = `ka_session=${accessToken}; path=/${expires}; SameSite=Lax`;
+      document.cookie = `ka_role=${role}; path=/${expires}; SameSite=Lax`;
+
+      // ── También en storage para compatibilidad con guards client-side ─
+      const store = keepSession ? localStorage : sessionStorage;
+      store.setItem('ka_session', accessToken);
+      store.setItem('ka_role', role);
+      // Guardar refreshToken para renovación silenciosa
+      store.setItem('ka_refresh', refreshToken);
+
+      // ── Redirigir según rol devuelto por el backend ───────────────
+      const redirectUrl = role === 'profesor' ? '/profesor' : '/estudiante';
+      window.location.href = redirectUrl;
+
+    } catch (err: unknown) {
+      // ApiError → mensaje específico del backend (ej: "Credenciales incorrectas")
+      if (err instanceof Error && err.name === 'ApiError') {
+        showError(err.message);
+      } else {
+        showError('No se pudo conectar con el servidor. Verifica tu conexión.');
+      }
+      setLoading(false);
+    }
+
+  });
+</script>

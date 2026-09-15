@@ -1,0 +1,144 @@
+---
+/**
+ * estudiante/pagos.astro — Pagos y Facturación
+ * Muestra el estado de pagos del estudiante desde /payments/my
+ */
+import DashboardLayout from '../../layouts/DashboardLayout.astro';
+import { Icon } from 'astro-icon/components';
+import { getMyPayments, getPaymentSummary } from '../../core/services/api';
+import type { Payment, PaymentSummary } from '../../core/types/api.types';
+
+export const prerender = false;
+
+const token = Astro.cookies.get('ka_session')?.value ?? '';
+let payments: Payment[] = [];
+let summary: PaymentSummary = { total: 0, paid: 0, pending: 0, overdue: 0 };
+let fetchError = false;
+
+try {
+  const [paymentsData, summaryData] = await Promise.all([
+    getMyPayments(token),
+    getPaymentSummary(token).catch(() => ({ total: 0, paid: 0, pending: 0, overdue: 0 })),
+  ]);
+  payments = Array.isArray(paymentsData) ? paymentsData : (paymentsData?.payments ?? []);
+  summary = summaryData ?? summary;
+} catch (error: any) {
+  if (error?.statusCode === 401) return Astro.redirect('/logout');
+  fetchError = true;
+  console.error('Error fetching payments:', error);
+}
+
+const statusConfig: Record<string, { label: string; icon: string; bg: string; text: string }> = {
+  pagado:    { label: 'Pagado',    icon: 'lucide:check-circle-2', bg: 'bg-success-soft',  text: 'text-success-dark'  },
+  pendiente: { label: 'Pendiente', icon: 'lucide:clock',          bg: 'bg-warning-soft',  text: 'text-warning-dark'  },
+  vencido:   { label: 'Vencido',   icon: 'lucide:alert-circle',   bg: 'bg-danger-soft',   text: 'text-danger-dark'   },
+  cancelado: { label: 'Cancelado', icon: 'lucide:x-circle',       bg: 'bg-neutral-subtle', text: 'text-subtle'        },
+};
+
+function formatCurrency(amount: number, currency = 'USD'): string {
+  return new Intl.NumberFormat('es-ES', { style: 'currency', currency }).format(amount);
+}
+---
+
+<DashboardLayout pageTitle="Pagos y Facturación" breadcrumb="Pagos" activeNav="pagos">
+  <div class="max-w-5xl mx-auto flex flex-col gap-8">
+
+    <!-- Encabezado -->
+    <div class="flex items-center gap-3">
+      <div class="bg-brand text-white p-2 rounded-xl">
+        <Icon name="lucide:credit-card" class="w-6 h-6" />
+      </div>
+      <div>
+        <h1 class="text-3xl font-extrabold text-heading">Pagos y Facturación</h1>
+        <p class="text-sm text-subtle font-medium mt-0.5">Estado de tus pagos y cuotas de cursos</p>
+      </div>
+    </div>
+
+    {fetchError ? (
+      <div class="bg-danger-soft border border-danger/20 rounded-2xl p-6 text-center">
+        <Icon name="lucide:alert-circle" class="w-8 h-8 text-danger mx-auto mb-2" />
+        <p class="text-sm font-semibold text-danger-dark">No se pudieron cargar los pagos. Intenta recargar.</p>
+      </div>
+    ) : (
+      <div class="flex flex-col gap-6">
+
+        <!-- Resumen de pagos -->
+        <div class="grid grid-cols-2 sm:grid-cols-4 gap-4">
+          {[
+            { label: 'Total',    value: summary.total,   icon: 'lucide:receipt',       bg: 'bg-neutral-subtle', text: 'text-heading'     },
+            { label: 'Pagados',  value: summary.paid,    icon: 'lucide:check-circle-2', bg: 'bg-success-soft', text: 'text-success-dark' },
+            { label: 'Pendientes', value: summary.pending, icon: 'lucide:clock',        bg: 'bg-warning-soft', text: 'text-warning-dark' },
+            { label: 'Vencidos', value: summary.overdue, icon: 'lucide:alert-circle',  bg: 'bg-danger-soft',  text: 'text-danger-dark'  },
+          ].map((item) => (
+            <div class={`${item.bg} rounded-2xl p-5 flex flex-col gap-2`}>
+              <Icon name={item.icon} class={`w-5 h-5 ${item.text}`} />
+              <p class={`text-2xl font-extrabold ${item.text}`}>{item.value}</p>
+              <p class={`text-xs font-semibold ${item.text} opacity-80`}>{item.label}</p>
+            </div>
+          ))}
+        </div>
+
+        {payments.length === 0 ? (
+          <div class="bg-card border border-edge rounded-3xl p-12 text-center">
+            <Icon name="lucide:wallet" class="w-12 h-12 text-subtle mx-auto mb-4" />
+            <h2 class="text-xl font-extrabold text-heading mb-2">Sin pagos registrados</h2>
+            <p class="text-subtle text-sm">Tus pagos y cuotas aparecerán aquí cuando sean generados.</p>
+          </div>
+        ) : (
+          <div class="bg-card border border-edge rounded-2xl overflow-hidden">
+            <div class="px-6 py-4 border-b border-edge-soft">
+              <h2 class="text-sm font-extrabold text-heading uppercase tracking-wider">Historial de Pagos</h2>
+            </div>
+            <div class="divide-y divide-edge-soft">
+              {payments.map((payment: Payment) => {
+                const cfg = statusConfig[payment.status] ?? statusConfig['pendiente'];
+                const dueDate = new Date(payment.dueDate);
+                const isOverdue = payment.status === 'vencido' || (payment.status === 'pendiente' && dueDate < new Date());
+                return (
+                  <div class="flex items-center gap-4 px-6 py-4 hover:bg-neutral-bg/40 transition-colors">
+                    <!-- Ícono de estado -->
+                    <div class={`w-10 h-10 rounded-xl flex items-center justify-center shrink-0 ${cfg.bg}`}>
+                      <Icon name={cfg.icon} class={`w-5 h-5 ${cfg.text}`} />
+                    </div>
+
+                    <!-- Info -->
+                    <div class="flex-1 min-w-0">
+                      <p class="text-sm font-bold text-heading truncate">
+                        {payment.course?.title ?? `Curso #${payment.courseId.slice(0,8)}`}
+                      </p>
+                      <div class="flex items-center gap-3 mt-0.5">
+                        <p class={`text-xs font-medium ${isOverdue && payment.status !== 'pagado' ? 'text-danger-dark' : 'text-subtle'}`}>
+                          Vence: {dueDate.toLocaleDateString('es-ES', { dateStyle: 'medium' })}
+                        </p>
+                        {payment.paidAt && (
+                          <p class="text-xs text-subtle">
+                            Pagado: {new Date(payment.paidAt).toLocaleDateString('es-ES', { dateStyle: 'medium' })}
+                          </p>
+                        )}
+                      </div>
+                      {payment.notes && (
+                        <p class="text-xs text-subtle mt-0.5 italic">{payment.notes}</p>
+                      )}
+                    </div>
+
+                    <!-- Monto y badge -->
+                    <div class="text-right shrink-0">
+                      <p class="text-base font-extrabold text-heading">
+                        {formatCurrency(payment.amount, payment.currency)}
+                      </p>
+                      <span class={`text-[10px] font-bold px-2 py-0.5 rounded-full ${cfg.bg} ${cfg.text}`}>
+                        {cfg.label}
+                      </span>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+        )}
+
+      </div>
+    )}
+
+  </div>
+</DashboardLayout>

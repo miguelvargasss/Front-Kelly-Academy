@@ -1,0 +1,101 @@
+---
+/**
+ * login.astro — Página: Autenticación
+ * ============================================================
+ * Primera página que ve el usuario. Layout de dos columnas:
+ *   · Izquierda: panel de branding con imagen heroína
+ *   · Derecha: card de login centrada (LoginForm feature)
+ *
+ * Sin validación de credenciales reales (sin endpoints aún).
+ * Estilos exclusivamente via Tailwind CSS — cero <style>.
+ */
+import LoginLayout from '../layouts/LoginLayout.astro';
+import LoginForm from '../features/auth/LoginForm.astro';
+import { AUTH_ASSETS } from '../core/config/paths';
+---
+
+<LoginLayout pageTitle="Iniciar Sesión">
+
+  <!-- ════════════════════════════════════════════════════
+       Wrapper de dos columnas: branding | formulario
+  ════════════════════════════════════════════════════ -->
+  <div class="grid grid-cols-1 lg:grid-cols-2 min-h-screen">
+
+    <!-- ══ PANEL IZQUIERDO: Branding ════════════════════ -->
+    <aside
+      class="flex flex-col relative overflow-hidden py-10 px-12"
+      style="background: linear-gradient(160deg, #fff5f3 0%, #fde8e2 50%, #fad3c8 100%);"
+    >
+
+      <!-- Círculo decorativo de fondo -->
+      <div
+        class="absolute w-[320px] h-[320px] rounded-full pointer-events-none -top-[80px] -right-[80px]"
+        style="background: radial-gradient(circle, rgba(255,78,32,0.08) 0%, transparent 70%);"
+        aria-hidden="true"
+      ></div>
+
+      <!-- Top bar: badge + tagline -->
+      <div class="flex items-center justify-between flex-wrap gap-[0.5rem] mb-[1.75rem] relative z-10">
+        <span class="inline-flex items-center gap-[0.4rem] bg-white text-brand-dark border border-brand-muted text-[0.65rem] font-bold tracking-[0.08em] px-[0.75rem] py-[0.35rem] rounded-full shadow-[0_1px_4px_rgba(255,78,32,0.12)]">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
+            <path d="M12 21.593c-5.63-5.539-11-10.297-11-14.402 0-3.791 3.068-5.191 5.281-5.191 1.312 0 4.151.501 5.719 4.457 1.59-3.968 4.464-4.447 5.726-4.447 2.54 0 5.274 1.621 5.274 5.181 0 4.069-5.136 8.625-11 14.402z"/>
+          </svg>
+          PLATAFORMA BILINGÜE CRISTIANA
+        </span>
+        <span class="text-[0.75rem] font-medium text-subtle">English &amp; Biblical Wisdom</span>
+      </div>
+
+      <!-- Titular con tipografía de la marca -->
+      <div class="mb-[1.5rem] relative z-10">
+        <h2 class="text-[1.65rem] font-extrabold text-heading leading-[1.25] mb-[0.25rem]">
+          Aprende inglés con propósito,
+        </h2>
+        <p class="text-[1.85rem] font-bold text-brand-dark leading-[1.2] m-0" style="font-family: 'Dancing Script', cursive;">
+          cimentado en la Verdad.
+        </p>
+      </div>
+
+      <!-- Imagen heroína de Miss Kelly Q. -->
+      <div class="flex-1 flex items-center justify-center py-[1rem] relative z-10 w-full">
+        <img
+          src={AUTH_ASSETS.loginHero}
+          alt="Miss Kelly Q. — Sabiduría para aprender inglés y la Palabra de Dios"
+          class="w-full max-w-[550px] h-auto object-contain transition-transform duration-400 hover:scale-[1.02] mix-blend-multiply"
+          loading="eager"
+        />
+      </div>
+
+      <!-- Versículo bíblico inferior -->
+      <div class="flex items-start gap-[0.875rem] bg-white rounded-[1.25rem] py-[1.1rem] px-[1.25rem] mt-[1.5rem] border border-brand-soft shadow-[0_2px_12px_rgba(0,0,0,0.07)] relative z-10">
+        <div class="bg-sidebar text-white p-[0.55rem] rounded-[0.625rem] flex-shrink-0 flex items-center justify-center">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+            <path d="M2 3h6a4 4 0 0 1 4 4v14a3 3 0 0 0-3-3H2z"/>
+            <path d="M22 3h-6a4 4 0 0 0-4 4v14a3 3 0 0 1 3-3h7z"/>
+          </svg>
+        </div>
+        <div>
+          <p class="text-[0.65rem] font-bold tracking-[0.08em] mb-[0.35rem] flex items-center gap-[0.3rem]">
+            <span class="text-brand-dark">PROVERBIOS 2:6</span>
+            <span class="text-muted text-[0.65rem]">●</span>
+            <span class="text-subtle font-medium">Guía de Aprendizaje</span>
+          </p>
+          <p class="text-[0.82rem] italic text-body leading-[1.5] m-0">
+            "Porque Jehová da la sabiduría, y de su boca viene el conocimiento y la inteligencia."
+          </p>
+        </div>
+      </div>
+
+    </aside>
+
+    <!-- ══ PANEL DERECHO: Card de Login ═════════════════ -->
+    <section
+      class="bg-page flex items-center justify-center p-6 lg:p-10"
+      aria-labelledby="login-heading"
+    >
+      <!-- LoginForm es el componente feature que encapsula toda la lógica de autenticación -->
+      <LoginForm />
+    </section>
+
+  </div>
+
+</LoginLayout>

@@ -1,0 +1,527 @@
+---
+/**
+ * ContentUploadPanel.astro — features/teacher
+ * ─────────────────────────────────────────────────────────────────────
+ * Modal para agregar un MATERIAL o una ACTIVIDAD a una semana del curso.
+ * Tabs: Material (video / archivo / enlace) | Actividad (tarea/evaluación)
+ * Toggle de visibilidad: el docente puede publicar o dejar como borrador.
+ */
+import { Icon } from 'astro-icon/components';
+---
+
+<!-- ░░ MODAL DE CARGA DE CONTENIDO ░░ -->
+<div
+  id="content-upload-modal"
+  class="fixed inset-0 z-50 flex items-end sm:items-center justify-center opacity-0 pointer-events-none transition-opacity duration-300"
+  role="dialog"
+  aria-modal="true"
+  aria-labelledby="upload-modal-title"
+>
+  <div id="upload-modal-backdrop" class="absolute inset-0 bg-black/50 backdrop-blur-sm cursor-pointer"></div>
+
+  <div
+    id="upload-modal-panel"
+    class="relative bg-card w-full sm:w-[92%] sm:max-w-xl max-h-[92vh] rounded-t-2xl sm:rounded-2xl shadow-2xl flex flex-col overflow-hidden transform translate-y-4 sm:scale-95 transition-transform duration-300 border border-edge"
+  >
+    <!-- Cabecera -->
+    <div class="px-5 py-4 border-b border-edge-soft flex items-center justify-between bg-neutral-bg/30 shrink-0">
+      <div class="flex items-center gap-2.5">
+        <div class="w-8 h-8 rounded-full bg-brand-soft flex items-center justify-center shrink-0">
+          <Icon name="lucide:plus-circle" class="w-4 h-4 text-brand-dark" aria-hidden="true" />
+        </div>
+        <div>
+          <h2 id="upload-modal-title" class="text-base font-extrabold text-heading">Agregar Contenido</h2>
+          <p id="upload-modal-section" class="text-[11px] font-semibold text-subtle">Sección</p>
+        </div>
+      </div>
+      <button
+        id="close-upload-modal-btn"
+        type="button"
+        class="p-1.5 rounded-full hover:bg-neutral-subtle text-subtle hover:text-heading transition-colors"
+        aria-label="Cerrar"
+      >
+        <Icon name="lucide:x" class="w-4 h-4" aria-hidden="true" />
+      </button>
+    </div>
+
+    <!-- Tabs: Material / Actividad -->
+    <div class="px-5 pt-4 shrink-0" role="tablist" aria-label="Tipo de contenido">
+      <div class="flex gap-1 bg-neutral-bg/50 rounded-xl p-1">
+        <button
+          type="button"
+          id="tab-material-btn"
+          role="tab"
+          aria-selected="true"
+          aria-controls="tab-material-panel"
+          class="upload-tab flex-1 flex items-center justify-center gap-2 py-2 rounded-lg text-xs font-bold transition-all bg-card text-heading shadow-sm"
+        >
+          <Icon name="lucide:file-text" class="w-3.5 h-3.5" aria-hidden="true" />
+          Material
+        </button>
+        <button
+          type="button"
+          id="tab-activity-btn"
+          role="tab"
+          aria-selected="false"
+          aria-controls="tab-activity-panel"
+          class="upload-tab flex-1 flex items-center justify-center gap-2 py-2 rounded-lg text-xs font-bold transition-all text-subtle hover:text-heading"
+        >
+          <Icon name="lucide:clipboard-list" class="w-3.5 h-3.5" aria-hidden="true" />
+          Actividad
+        </button>
+      </div>
+    </div>
+
+    <!-- Cuerpo scrollable -->
+    <div class="overflow-y-auto flex-1 px-5 py-4">
+
+      <!-- ── PANEL: MATERIAL ── -->
+      <div id="tab-material-panel" role="tabpanel" aria-labelledby="tab-material-btn" class="flex flex-col gap-4">
+
+        <!-- Tipo de material -->
+        <fieldset>
+          <legend class="text-[11px] font-bold text-heading uppercase tracking-wider mb-2">Tipo de material</legend>
+          <div class="grid grid-cols-3 gap-2" role="radiogroup">
+            {[
+              { value: 'video',   icon: 'lucide:video',       label: 'Video'   },
+              { value: 'archivo', icon: 'lucide:file-text',   label: 'Archivo' },
+              { value: 'enlace',  icon: 'lucide:link',        label: 'Enlace'  },
+              { value: 'imagen',  icon: 'lucide:image',       label: 'Imagen'  },
+            ].map((t, i) => (
+              <label class="resource-type-label flex flex-col items-center gap-1.5 p-3 rounded-xl border-2 border-edge cursor-pointer hover:border-brand/30 hover:bg-brand-soft/20 transition-all has-[:checked]:border-brand has-[:checked]:bg-brand-soft">
+                <input type="radio" name="materialType" value={t.value} class="sr-only" checked={i === 0} />
+                <Icon name={t.icon} class="w-4 h-4 text-subtle" aria-hidden="true" />
+                <span class="text-[11px] font-bold text-subtle">{t.label}</span>
+              </label>
+            ))}
+          </div>
+        </fieldset>
+
+        <!-- Título -->
+        <div class="flex flex-col gap-1">
+          <label for="material-title" class="text-[11px] font-bold text-heading uppercase tracking-wider">
+            Título <span class="text-danger" aria-hidden="true">*</span>
+          </label>
+          <input
+            type="text"
+            id="material-title"
+            name="materialTitle"
+            placeholder="Ej: Presentación — Unit 3 Vocabulary"
+            required
+            class="w-full px-3.5 py-2.5 rounded-lg border border-edge bg-neutral-bg/30 text-sm text-heading font-medium placeholder:text-muted focus:outline-none focus:ring-2 focus:ring-brand transition"
+          />
+        </div>
+
+        <!-- URL (para video/enlace) -->
+        <div id="material-url-field" class="flex flex-col gap-1">
+          <label for="material-url" class="text-[11px] font-bold text-heading uppercase tracking-wider">
+            URL del recurso
+          </label>
+          <div class="relative">
+            <Icon name="lucide:link" class="absolute left-3 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-muted pointer-events-none" aria-hidden="true" />
+            <input
+              type="url"
+              id="material-url"
+              name="materialUrl"
+              placeholder="https://..."
+              class="w-full pl-9 pr-3.5 py-2.5 rounded-lg border border-edge bg-neutral-bg/30 text-sm text-heading font-medium placeholder:text-muted focus:outline-none focus:ring-2 focus:ring-brand transition"
+            />
+          </div>
+        </div>
+
+        <!-- Subida de archivo (para archivo/PDF) -->
+        <div id="material-file-field" class="flex flex-col gap-1 hidden">
+          <label class="text-[11px] font-bold text-heading uppercase tracking-wider">
+            Archivo <span class="text-danger" aria-hidden="true">*</span>
+          </label>
+          <label
+            for="material-file"
+            class="flex items-center gap-3 px-3.5 py-3 rounded-lg border-2 border-dashed border-edge hover:border-brand/40 hover:bg-brand-soft/10 cursor-pointer transition-all"
+          >
+            <Icon name="lucide:paperclip" class="w-4 h-4 text-subtle flex-shrink-0" aria-hidden="true" />
+            <span id="material-file-label" class="text-sm text-subtle font-medium">Seleccionar archivo (PDF, DOCX, MP4, IMG...)</span>
+            <input type="file" id="material-file" name="materialFile" class="sr-only" accept=".pdf,.docx,.doc,.pptx,.xlsx,.mp4,.mp3,.png,.jpg,.jpeg,.gif,.webp" />
+          </label>
+          <p class="text-[10px] text-muted font-medium">Formatos: PDF, DOCX, PPTX, MP4, PNG, JPG · Máx 100 MB</p>
+        </div>
+
+        <!-- Descripción -->
+        <div class="flex flex-col gap-1">
+          <label for="material-description" class="text-[11px] font-bold text-heading uppercase tracking-wider">
+            Descripción (opcional)
+          </label>
+          <textarea
+            id="material-description"
+            name="materialDescription"
+            rows={2}
+            placeholder="Contexto o instrucciones para los alumnos..."
+            class="w-full px-3.5 py-2.5 rounded-lg border border-edge bg-neutral-bg/30 text-sm text-heading font-medium placeholder:text-muted focus:outline-none focus:ring-2 focus:ring-brand transition resize-none"
+          ></textarea>
+        </div>
+
+        <!-- Visibilidad -->
+        <div class="flex items-center justify-between bg-neutral-bg/50 px-4 py-3 rounded-xl border border-edge">
+          <div class="flex items-center gap-2.5">
+            <Icon name="lucide:eye" id="vis-icon-material" class="w-4 h-4 text-brand-dark" aria-hidden="true" />
+            <div>
+              <p class="text-xs font-bold text-heading" id="vis-label-material">Visible para alumnos</p>
+              <p class="text-[10px] text-subtle font-medium">Los alumnos podrán ver este material</p>
+            </div>
+          </div>
+          <button
+            type="button"
+            id="visibility-toggle-material"
+            role="switch"
+            aria-checked="true"
+            aria-label="Cambiar visibilidad del material"
+            class="relative w-11 h-6 rounded-full bg-brand transition-colors focus:outline-none focus:ring-2 focus:ring-brand focus:ring-offset-2"
+          >
+            <span class="absolute left-1 top-1 w-4 h-4 rounded-full bg-white shadow transition-transform translate-x-5"></span>
+          </button>
+        </div>
+
+      </div>
+
+      <!-- ── PANEL: ACTIVIDAD ── -->
+      <div id="tab-activity-panel" role="tabpanel" aria-labelledby="tab-activity-btn" class="hidden flex-col gap-4">
+
+        <!-- Tipo de actividad -->
+        <fieldset>
+          <legend class="text-[11px] font-bold text-heading uppercase tracking-wider mb-2">Tipo de actividad</legend>
+          <div class="grid grid-cols-2 gap-2" role="radiogroup">
+            {[
+              { value: 'tarea',      icon: 'lucide:clipboard-list', label: 'Tarea',       desc: 'Entrega libre'   },
+              { value: 'evaluacion', icon: 'lucide:star',           label: 'Evaluación',  desc: 'Calificada'      },
+            ].map((t, i) => (
+              <label class="activity-type-label flex items-center gap-3 p-3 rounded-xl border-2 border-edge cursor-pointer hover:border-brand/30 hover:bg-brand-soft/20 transition-all has-[:checked]:border-brand has-[:checked]:bg-brand-soft">
+                <input type="radio" name="activityType" value={t.value} class="sr-only" checked={i === 0} />
+                <Icon name={t.icon} class="w-4 h-4 text-subtle shrink-0" aria-hidden="true" />
+                <div>
+                  <p class="text-xs font-bold text-heading">{t.label}</p>
+                  <p class="text-[10px] text-subtle">{t.desc}</p>
+                </div>
+              </label>
+            ))}
+          </div>
+        </fieldset>
+
+        <!-- Título -->
+        <div class="flex flex-col gap-1">
+          <label for="activity-title" class="text-[11px] font-bold text-heading uppercase tracking-wider">
+            Título de la actividad <span class="text-danger" aria-hidden="true">*</span>
+          </label>
+          <input
+            type="text"
+            id="activity-title"
+            name="activityTitle"
+            placeholder="Ej: Tarea: Writing — Self-introduction"
+            required
+            class="w-full px-3.5 py-2.5 rounded-lg border border-edge bg-neutral-bg/30 text-sm text-heading font-medium placeholder:text-muted focus:outline-none focus:ring-2 focus:ring-brand transition"
+          />
+        </div>
+
+        <!-- Instrucciones -->
+        <div class="flex flex-col gap-1">
+          <label for="activity-instructions" class="text-[11px] font-bold text-heading uppercase tracking-wider">
+            Instrucciones (texto)
+          </label>
+          <textarea
+            id="activity-instructions"
+            name="activityInstructions"
+            rows={3}
+            placeholder="Describe qué debe hacer el alumno, criterios, ejemplos..."
+            class="w-full px-3.5 py-2.5 rounded-lg border border-edge bg-neutral-bg/30 text-sm text-heading font-medium placeholder:text-muted focus:outline-none focus:ring-2 focus:ring-brand transition resize-none"
+          ></textarea>
+        </div>
+
+        <!-- Archivo de instrucciones (PDF adjunto) -->
+        <div class="flex flex-col gap-1">
+          <label class="text-[11px] font-bold text-heading uppercase tracking-wider">
+            Archivo de instrucciones (opcional)
+          </label>
+          <label
+            for="activity-instructions-file"
+            class="flex items-center gap-3 px-3.5 py-2.5 rounded-lg border-2 border-dashed border-edge hover:border-brand/40 hover:bg-brand-soft/10 cursor-pointer transition-all"
+          >
+            <Icon name="lucide:file-text" class="w-4 h-4 text-subtle flex-shrink-0" aria-hidden="true" />
+            <span id="activity-file-label" class="text-sm text-subtle font-medium">Adjuntar PDF de instrucciones...</span>
+            <input type="file" id="activity-instructions-file" name="activityFile" class="sr-only" accept=".pdf,.docx" />
+          </label>
+        </div>
+
+        <!-- Fecha de entrega + Puntuación -->
+        <div class="grid grid-cols-2 gap-3">
+          <div class="flex flex-col gap-1">
+            <label for="activity-due-date" class="text-[11px] font-bold text-heading uppercase tracking-wider">
+              Fecha de entrega <span class="text-danger" aria-hidden="true">*</span>
+            </label>
+            <div class="relative">
+              <Icon name="lucide:calendar" class="absolute left-3 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-muted pointer-events-none" aria-hidden="true" />
+              <input
+                type="date"
+                id="activity-due-date"
+                name="activityDueDate"
+                required
+                class="w-full pl-9 pr-2 py-2.5 rounded-lg border border-edge bg-neutral-bg/30 text-sm text-heading font-medium focus:outline-none focus:ring-2 focus:ring-brand transition"
+              />
+            </div>
+          </div>
+          <div class="flex flex-col gap-1">
+            <label for="activity-max-score" class="text-[11px] font-bold text-heading uppercase tracking-wider">
+              Puntuación máx.
+            </label>
+            <div class="relative">
+              <Icon name="lucide:star" class="absolute left-3 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-muted pointer-events-none" aria-hidden="true" />
+              <input
+                type="number"
+                id="activity-max-score"
+                name="activityMaxScore"
+                min="1"
+                max="100"
+                placeholder="100"
+                class="w-full pl-9 pr-2 py-2.5 rounded-lg border border-edge bg-neutral-bg/30 text-sm text-heading font-medium placeholder:text-muted focus:outline-none focus:ring-2 focus:ring-brand transition"
+              />
+            </div>
+          </div>
+        </div>
+
+        <!-- Tipo de entrega -->
+        <div class="flex flex-col gap-1.5">
+          <label class="text-[11px] font-bold text-heading uppercase tracking-wider">Tipo de entrega permitida</label>
+          <div class="flex flex-wrap gap-2">
+            {[
+              { value: 'texto',  label: 'Texto', icon: 'lucide:type' },
+              { value: 'archivo',label: 'Archivo', icon: 'lucide:paperclip' },
+              { value: 'ambos',  label: 'Texto + Archivo', icon: 'lucide:layers' },
+            ].map((opt, i) => (
+              <label class="flex items-center gap-2 px-3 py-2 rounded-lg border-2 border-edge cursor-pointer hover:border-brand/30 hover:bg-brand-soft/20 transition-all has-[:checked]:border-brand has-[:checked]:bg-brand-soft text-xs font-bold text-subtle">
+                <input type="radio" name="deliveryType" value={opt.value} class="sr-only" checked={i === 2} />
+                <Icon name={opt.icon} class="w-3.5 h-3.5" aria-hidden="true" />
+                {opt.label}
+              </label>
+            ))}
+          </div>
+        </div>
+
+        <!-- Visibilidad -->
+        <div class="flex items-center justify-between bg-neutral-bg/50 px-4 py-3 rounded-xl border border-edge">
+          <div class="flex items-center gap-2.5">
+            <Icon name="lucide:eye" id="vis-icon-activity" class="w-4 h-4 text-brand-dark" aria-hidden="true" />
+            <div>
+              <p class="text-xs font-bold text-heading" id="vis-label-activity">Visible para alumnos</p>
+              <p class="text-[10px] text-subtle font-medium">Los alumnos podrán ver y entregar esta actividad</p>
+            </div>
+          </div>
+          <button
+            type="button"
+            id="visibility-toggle-activity"
+            role="switch"
+            aria-checked="true"
+            aria-label="Cambiar visibilidad de la actividad"
+            class="relative w-11 h-6 rounded-full bg-brand transition-colors focus:outline-none focus:ring-2 focus:ring-brand focus:ring-offset-2"
+          >
+            <span class="absolute left-1 top-1 w-4 h-4 rounded-full bg-white shadow transition-transform translate-x-5"></span>
+          </button>
+        </div>
+
+      </div>
+
+    </div>
+
+    <!-- Footer -->
+    <div class="px-5 py-3.5 border-t border-edge-soft flex items-center justify-between bg-neutral-bg/20 shrink-0">
+      <p id="upload-draft-note" class="text-[10px] text-subtle font-medium">
+        <span class="font-bold text-heading">Borrador</span> — no visible para alumnos hasta que lo publiques.
+      </p>
+      <div class="flex items-center gap-2.5">
+        <button
+          type="button"
+          id="cancel-upload-btn"
+          class="px-4 py-2 rounded-lg border border-edge text-sm font-bold text-subtle hover:bg-neutral-subtle hover:text-heading transition-colors"
+        >
+          Cancelar
+        </button>
+        <button
+          type="button"
+          id="save-upload-btn"
+          class="flex items-center gap-2 px-5 py-2 rounded-lg bg-brand text-white text-sm font-bold hover:bg-brand-dark transition-colors shadow-sm"
+        >
+          <span id="save-upload-label">Agregar</span>
+          <svg id="save-upload-spinner" xmlns="http://www.w3.org/2000/svg" class="w-4 h-4 animate-spin hidden" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 12a9 9 0 1 1-6.219-8.56"/></svg>
+        </button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>
+  import { uploadFile } from '../../core/services/upload.service';
+  
+  // ── Tabs ──────────────────────────────────────────────────────────
+  const tabMaterialBtn  = document.getElementById('tab-material-btn')!;
+  const tabActivityBtn  = document.getElementById('tab-activity-btn')!;
+  const tabMaterialPanel= document.getElementById('tab-material-panel')!;
+  const tabActivityPanel= document.getElementById('tab-activity-panel')!;
+  const draftNote       = document.getElementById('upload-draft-note')!;
+
+  function switchTab(active: 'material' | 'activity') {
+    const isMaterial = active === 'material';
+    tabMaterialBtn.setAttribute('aria-selected', String(isMaterial));
+    tabActivityBtn.setAttribute('aria-selected', String(!isMaterial));
+
+    // Active tab styles
+    [tabMaterialBtn, tabActivityBtn].forEach((btn, i) => {
+      const isActive = (i === 0) === isMaterial;
+      btn.classList.toggle('bg-card', isActive);
+      btn.classList.toggle('text-heading', isActive);
+      btn.classList.toggle('shadow-sm', isActive);
+      btn.classList.toggle('text-subtle', !isActive);
+    });
+
+    tabMaterialPanel.classList.toggle('hidden', !isMaterial);
+    tabMaterialPanel.classList.toggle('flex', isMaterial);
+    tabActivityPanel.classList.toggle('hidden', isMaterial);
+    tabActivityPanel.classList.toggle('flex', !isMaterial);
+  }
+
+  tabMaterialBtn.addEventListener('click', () => switchTab('material'));
+  tabActivityBtn.addEventListener('click', () => switchTab('activity'));
+  switchTab('material'); // init
+
+  // ── Mostrar campo URL vs archivo según tipo de material ───────────
+  const materialTypeRadios = document.querySelectorAll<HTMLInputElement>('input[name="materialType"]');
+  const urlField  = document.getElementById('material-url-field')!;
+  const fileField = document.getElementById('material-file-field')!;
+
+  materialTypeRadios.forEach(radio => {
+    radio.addEventListener('change', () => {
+      const isFile = radio.value === 'archivo' || radio.value === 'imagen';
+      urlField.classList.toggle('hidden', isFile);
+      fileField.classList.toggle('hidden', !isFile);
+    });
+  });
+
+  // ── Label del input de archivo ────────────────────────────────────
+  document.getElementById('material-file')?.addEventListener('change', (e) => {
+    const f = (e.target as HTMLInputElement).files?.[0];
+    const lbl = document.getElementById('material-file-label');
+    if (lbl) lbl.textContent = f ? f.name : 'Seleccionar archivo (PDF, DOCX, MP4, IMG...)';
+  });
+  document.getElementById('activity-instructions-file')?.addEventListener('change', (e) => {
+    const f = (e.target as HTMLInputElement).files?.[0];
+    const lbl = document.getElementById('activity-file-label');
+    if (lbl) lbl.textContent = f ? f.name : 'Adjuntar PDF de instrucciones...';
+  });
+
+  // ── Toggle de visibilidad ─────────────────────────────────────────
+  function bindVisibilityToggle(toggleId: string, labelId: string, iconId: string) {
+    const btn   = document.getElementById(toggleId)!;
+    const label = document.getElementById(labelId)!;
+    const icon  = document.getElementById(iconId)!;
+    if (!btn) return;
+
+    let visible = true;
+    btn.addEventListener('click', () => {
+      visible = !visible;
+      btn.setAttribute('aria-checked', String(visible));
+      btn.classList.toggle('bg-brand', visible);
+      btn.classList.toggle('bg-neutral-subtle', !visible);
+      const knob = btn.querySelector('span')!;
+      knob.classList.toggle('translate-x-5', visible);
+      knob.classList.toggle('translate-x-0', !visible);
+      label.textContent = visible ? 'Visible para alumnos' : 'Oculto (borrador)';
+      icon.setAttribute('data-icon', visible ? 'lucide:eye' : 'lucide:eye-off');
+      // update draft note
+      if(draftNote) draftNote.innerHTML = visible
+        ? '<span class="font-bold text-success-dark">Publicado</span> — los alumnos podrán verlo de inmediato.'
+        : '<span class="font-bold text-heading">Borrador</span> — no visible para alumnos hasta que lo publiques.';
+    });
+  }
+
+  bindVisibilityToggle('visibility-toggle-material', 'vis-label-material', 'vis-icon-material');
+  bindVisibilityToggle('visibility-toggle-activity',  'vis-label-activity',  'vis-icon-activity');
+
+  // ── Botón Agregar ─────────────────────────────────────────────────
+
+  document.getElementById('save-upload-btn')?.addEventListener('click', async () => {
+    const isActivity = tabActivityBtn.getAttribute('aria-selected') === 'true';
+    const titleEl = document.getElementById(isActivity ? 'activity-title' : 'material-title') as HTMLInputElement;
+
+    if (!titleEl.value.trim()) {
+      titleEl.classList.add('ring-2','ring-red-400','border-red-400');
+      titleEl.focus();
+      return;
+    }
+
+    const btn   = document.getElementById('save-upload-btn') as HTMLButtonElement;
+    const lbl   = document.getElementById('save-upload-label')!;
+    const spin  = document.getElementById('save-upload-spinner')!;
+    btn.disabled = true; lbl.classList.add('hidden'); spin.classList.remove('hidden');
+
+    try {
+      const type = isActivity
+        ? (document.querySelector<HTMLInputElement>('input[name="activityType"]:checked')?.value ?? 'tarea')
+        : (document.querySelector<HTMLInputElement>('input[name="materialType"]:checked')?.value ?? 'archivo');
+        
+      let fileUrl = '';
+      const fileInput = isActivity 
+        ? document.getElementById('activity-instructions-file') as HTMLInputElement 
+        : document.getElementById('material-file') as HTMLInputElement;
+      const file = fileInput.files?.[0];
+
+      if (file && (type === 'archivo' || type === 'imagen' || type === 'video' || type === 'audio' || isActivity)) {
+        const tokenMatch = document.cookie.match(/(?:^|; )ka_session=([^;]*)/);
+        const token = tokenMatch ? tokenMatch[1] : '';
+        const res = await uploadFile(file, isActivity ? 'submission' : 'library', token);
+        fileUrl = res.url;
+      } else {
+        // Here, if it is a URL input instead of a file input:
+        fileUrl = (document.getElementById('material-url') as HTMLInputElement).value;
+      }
+
+      btn.disabled = false; lbl.classList.remove('hidden'); spin.classList.add('hidden');
+      titleEl.classList.remove('ring-2','ring-red-400','border-red-400');
+
+      // Disparar evento custom para que la página host agregue o edite el item
+      const descriptionEl = document.getElementById(
+        isActivity ? 'activity-instructions' : 'material-description'
+      ) as HTMLTextAreaElement;
+
+      const modal = document.getElementById('content-upload-modal');
+      const editItemId = modal?.getAttribute('data-edit-item-id');
+
+      const dueDateEl = document.getElementById('activity-due-date') as HTMLInputElement;
+      const maxScoreEl = document.getElementById('activity-max-score') as HTMLInputElement;
+
+      const payload = {
+        detail: {
+          isActivity,
+          title:  titleEl.value.trim(),
+          description: descriptionEl.value.trim(),
+          type,
+          visible: document.getElementById('visibility-toggle-' + (isActivity ? 'activity' : 'material'))
+            ?.getAttribute('aria-checked') === 'true',
+          fileUrl, // Include the uploaded URL
+          editItemId,
+          dueDate: isActivity && dueDateEl ? dueDateEl.value : undefined,
+          maxScore: isActivity && maxScoreEl ? (maxScoreEl.value ? Number(maxScoreEl.value) : undefined) : undefined,
+        }
+      };
+
+      if (editItemId) {
+        document.dispatchEvent(new CustomEvent('contentUpdated', payload));
+      } else {
+        document.dispatchEvent(new CustomEvent('contentAdded', payload));
+      }
+
+      // Limpiar y cerrar
+      titleEl.value = '';
+      if (modal) modal.removeAttribute('data-edit-item-id');
+      (window as any).__closeUploadModal?.();
+    } catch (err) {
+      console.error('Upload failed:', err);
+      btn.disabled = false; lbl.classList.remove('hidden'); spin.classList.add('hidden');
+      alert('Error al subir el archivo. Revisa el límite de tamaño.');
+    }
+  });
+</script>

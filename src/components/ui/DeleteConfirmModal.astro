@@ -1,0 +1,163 @@
+---
+/**
+ * DeleteConfirmModal.astro — Card Flotante de Confirmación de Eliminación
+ * ─────────────────────────────────────────────────────────────────────────
+ * Componente global reutilizable. Reemplaza confirm() nativos del navegador
+ * por una card flotante consistente con el diseño del portal.
+ *
+ * USO:
+ *   1. Renderizar: <DeleteConfirmModal modalId="my-modal" title="Eliminar X" description="..." />
+ *   2. En JS: window.openDeleteModal('my-modal', 'Nombre del item', async () => { await deleteApi(...) })
+ */
+
+interface Props {
+  modalId: string;
+  title?: string;
+  description?: string;
+}
+
+const {
+  modalId,
+  title = 'Eliminar elemento',
+  description = 'Esta acción es permanente y no se puede deshacer.',
+} = Astro.props;
+---
+
+<div
+  id={modalId}
+  class="fixed inset-0 z-[80] flex items-center justify-center opacity-0 pointer-events-none transition-opacity duration-300"
+  role="alertdialog"
+  aria-modal="true"
+  aria-labelledby={`${modalId}-title`}
+  data-delete-modal
+>
+  <div data-backdrop class="absolute inset-0 bg-black/50 backdrop-blur-sm cursor-pointer"></div>
+
+  <div
+    data-panel
+    class="relative bg-card w-[90%] max-w-sm rounded-3xl shadow-2xl flex flex-col overflow-hidden transform scale-95 transition-transform duration-300 border border-edge"
+  >
+    <!-- Header -->
+    <div class="px-6 py-5 border-b border-edge-soft flex items-center justify-between bg-neutral-bg/30 shrink-0">
+      <div class="flex items-center gap-3">
+        <div class="w-10 h-10 rounded-full bg-danger-soft flex items-center justify-center shrink-0">
+          <svg xmlns="http://www.w3.org/2000/svg" class="w-5 h-5 text-danger-dark" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+            <path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/>
+            <line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/>
+          </svg>
+        </div>
+        <h2 id={`${modalId}-title`} class="text-lg font-extrabold text-heading">{title}</h2>
+      </div>
+      <button data-close-btn type="button" class="p-2 rounded-full hover:bg-neutral-subtle text-subtle hover:text-heading transition-colors" aria-label="Cerrar">
+        <svg xmlns="http://www.w3.org/2000/svg" class="w-5 h-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+      </button>
+    </div>
+
+    <!-- Body -->
+    <div class="p-6 flex flex-col gap-2">
+      <p class="text-sm text-subtle font-medium leading-relaxed">
+        ¿Estás seguro de que deseas eliminar <strong data-item-name class="text-heading font-bold"></strong>?
+      </p>
+      <p class="text-xs text-danger font-semibold mt-1">{description}</p>
+    </div>
+
+    <!-- Footer -->
+    <div class="px-6 py-4 border-t border-edge-soft flex items-center justify-end gap-3 bg-neutral-bg/20 shrink-0">
+      <button data-cancel-btn type="button" class="px-5 py-2.5 rounded-xl border border-edge text-sm font-bold text-subtle hover:bg-neutral-subtle hover:text-heading transition-colors">
+        Cancelar
+      </button>
+      <button data-confirm-btn type="button" class="flex items-center gap-2 px-6 py-2.5 rounded-xl bg-danger text-white text-sm font-bold hover:bg-danger-dark transition-colors shadow-sm disabled:opacity-60 disabled:cursor-not-allowed">
+        <span data-label>Eliminar</span>
+        <svg data-spinner class="w-4 h-4 animate-spin hidden" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 12a9 9 0 1 1-6.219-8.56"/></svg>
+      </button>
+    </div>
+  </div>
+</div>
+
+<script>
+  function initDeleteModal(modal: HTMLElement) {
+    if (modal.dataset.initialized) return;
+    modal.dataset.initialized = 'true';
+
+    const panel      = modal.querySelector<HTMLElement>('[data-panel]')!;
+    const backdrop   = modal.querySelector<HTMLElement>('[data-backdrop]')!;
+    const cancelBtn  = modal.querySelector<HTMLButtonElement>('[data-cancel-btn]')!;
+    const closeBtn   = modal.querySelector<HTMLButtonElement>('[data-close-btn]')!;
+    const confirmBtn = modal.querySelector<HTMLButtonElement>('[data-confirm-btn]')!;
+    const label      = modal.querySelector<HTMLElement>('[data-label]')!;
+    const spinner    = modal.querySelector<HTMLElement>('[data-spinner]')!;
+    const itemNameEl = modal.querySelector<HTMLElement>('[data-item-name]')!;
+
+    let _onConfirm: (() => Promise<void>) | null = null;
+
+    const open = (name: string, onConfirm: () => Promise<void>) => {
+      _onConfirm = onConfirm;
+      if (itemNameEl) itemNameEl.textContent = `"${name}"`;
+      modal.classList.remove('opacity-0', 'pointer-events-none');
+      panel.classList.remove('scale-95');
+      panel.classList.add('scale-100');
+      document.body.style.overflow = 'hidden';
+    };
+
+    const close = () => {
+      modal.classList.add('opacity-0', 'pointer-events-none');
+      panel.classList.remove('scale-100');
+      panel.classList.add('scale-95');
+      document.body.style.overflow = '';
+      _onConfirm = null;
+    };
+
+    [cancelBtn, closeBtn, backdrop].forEach(el => el?.addEventListener('click', close));
+
+    confirmBtn.addEventListener('click', async () => {
+      if (!_onConfirm) return;
+      confirmBtn.disabled = true;
+      label.classList.add('hidden');
+      spinner.classList.remove('hidden');
+      try {
+        await _onConfirm();
+      } finally {
+        confirmBtn.disabled = false;
+        label.classList.remove('hidden');
+        spinner.classList.add('hidden');
+        close();
+      }
+    });
+
+    const modalId = modal.id;
+    (window as any)[`_delModal_${modalId}_open`] = open;
+    (window as any)[`_delModal_${modalId}_close`] = close;
+  }
+
+  function initAllDeleteModals() {
+    document.querySelectorAll<HTMLElement>('[data-delete-modal]').forEach(initDeleteModal);
+  }
+
+  // API pública global
+  (window as any).openDeleteModal = (modalId: string, itemName: string, onConfirm: () => Promise<void>) => {
+    initAllDeleteModals();
+    const fn = (window as any)[`_delModal_${modalId}_open`];
+    if (fn) fn(itemName, onConfirm);
+    else console.warn(`[DeleteConfirmModal] Modal "${modalId}" no encontrado`);
+  };
+
+  (window as any).closeDeleteModal = (modalId: string) => {
+    ((window as any)[`_delModal_${modalId}_close`] ?? (() => {}))();
+  };
+
+  // Cerrar con Escape
+  document.addEventListener('keydown', (e) => {
+    if (e.key !== 'Escape') {
+      document.querySelectorAll<HTMLElement>('[data-delete-modal]:not(.pointer-events-none)').forEach(m => {
+        (window as any).closeDeleteModal(m.id);
+      });
+    }
+  });
+
+  if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', initAllDeleteModals);
+  } else {
+    initAllDeleteModals();
+  }
+  document.addEventListener('astro:page-load', initAllDeleteModals);
+</script>

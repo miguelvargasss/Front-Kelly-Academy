@@ -1,0 +1,31 @@
+---
+import { Icon } from 'astro-icon/components';
+
+interface Props {
+  label: string;
+  value: string | number;
+  icon?: string;
+  subtext?: string;
+  variant?: 'default' | 'brand';
+}
+
+const { label, value, icon, subtext, variant = 'default' } = Astro.props;
+const isBrand = variant === 'brand';
+---
+
+<article class={`rounded-xl p-5 flex flex-col gap-1 ${isBrand ? 'bg-brand-soft border border-brand-muted' : 'bg-card border border-edge'}`}>
+  <div class="flex items-center justify-between">
+    <p class={`text-xs font-semibold uppercase tracking-wider ${isBrand ? 'text-brand' : 'text-subtle'}`}>
+      {label}
+    </p>
+    {icon && (
+      <Icon name={icon} class={`w-5 h-5 ${isBrand ? 'text-brand' : 'text-muted'}`} aria-hidden="true" />
+    )}
+  </div>
+  <p class={`text-3xl font-bold ${isBrand ? 'text-brand' : 'text-heading'}`}>
+    {value}
+  </p>
+  {subtext && (
+    <p class={`text-xs ${isBrand ? 'text-brand-dark' : 'text-muted'}`}>{subtext}</p>
+  )}
+</article>

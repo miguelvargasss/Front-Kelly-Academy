@@ -1,0 +1,76 @@
+---
+/**
+ * ResourceViewerLayout.astro
+ * Layout de pantalla completa para visualizar recursos (PDFs, Videos, Enlaces).
+ * Mantiene la armonía de diseño usando los tokens del sistema (AGENTS.md).
+ */
+import { Icon } from 'astro-icon/components';
+import { ClientRouter } from 'astro:transitions';
+import '../styles/global.css';
+
+interface Props {
+  pageTitle: string;
+  resourceTitle: string;
+  backUrl: string;
+}
+
+const { pageTitle, resourceTitle, backUrl } = Astro.props;
+
+// Usamos tokens oficiales definidos en global.css
+const headerBg = 'bg-card border-b border-edge shadow-sm z-10';
+const textColor = 'text-heading';
+const iconHover = 'hover:bg-brand-soft hover:text-brand-dark transition-colors text-subtle';
+---
+
+<!doctype html>
+<html lang="es" class="h-full antialiased">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>{pageTitle} | Kelly Academy</title>
+    <ClientRouter />
+  </head>
+  <body class="h-full w-full flex flex-col m-0 p-0 overflow-hidden bg-page">
+    
+    <!-- Header del visor integrado al diseño -->
+    <header class={`flex items-center justify-between px-6 lg:px-8 h-16 shrink-0 ${headerBg}`}>
+      <div class="flex items-center gap-4">
+        <a 
+          href={backUrl}
+          class={`flex items-center justify-center w-9 h-9 rounded-xl ${iconHover}`}
+          title="Volver al curso"
+          aria-label="Volver al curso"
+        >
+          <Icon name="lucide:arrow-left" class="w-5 h-5" />
+        </a>
+        <div>
+          <h1 class={`text-sm font-extrabold tracking-wide truncate max-w-[200px] sm:max-w-md ${textColor}`}>
+            {resourceTitle}
+          </h1>
+          <p class="text-xs text-subtle font-medium mt-0.5">Visor de Recursos</p>
+        </div>
+      </div>
+
+      <div class="flex items-center gap-2">
+        <button type="button" class={`flex items-center justify-center w-9 h-9 rounded-xl ${iconHover}`} aria-label="Pantalla completa" title="Pantalla completa">
+          <Icon name="lucide:maximize" class="w-4 h-4" />
+        </button>
+        <button type="button" class={`flex items-center justify-center w-9 h-9 rounded-xl ${iconHover}`} aria-label="Descargar" title="Descargar recurso">
+          <Icon name="lucide:download" class="w-4 h-4" />
+        </button>
+        <div class="w-px h-6 mx-2 bg-edge-soft"></div>
+        <button type="button" class={`flex items-center justify-center w-9 h-9 rounded-xl ${iconHover}`} aria-label="Más opciones" title="Opciones">
+          <Icon name="lucide:more-vertical" class="w-4 h-4" />
+        </button>
+      </div>
+    </header>
+
+    <!-- Área principal de contenido (iframe u otro) envuelta en Card -->
+    <main class="flex-1 w-full h-full relative flex flex-col p-4 lg:p-6 min-h-0">
+      <div class="flex-1 bg-card border border-edge rounded-2xl shadow-sm overflow-hidden flex flex-col min-h-0">
+        <slot />
+      </div>
+    </main>
+
+  </body>
+</html>

@@ -1,0 +1,751 @@
+---
+/**
+ * profesor/cursos/[courseId]/recurso/[resourceId].astro
+ * ─────────────────────────────────────────────────────
+ * Vista de detalle completa de un recurso del curso.
+ * Soporta: PDF, imagen, video (Cloudinary / YouTube), enlace, audio.
+ *
+ * Preview strategy:
+ *   - PDF/DOC/DOCX/PPTX → Google Docs Viewer (iframe) con fallback a descarga
+ *   - Imagen             → <img> nativo
+ *   - Video              → <video> nativo o embed YouTube/Vimeo
+ *   - Audio              → <audio> nativo
+ *   - Enlace             → tarjeta con redirect
+ */
+import ResourceViewerLayout from '../../../../../layouts/ResourceViewerLayout.astro';
+import { Icon } from 'astro-icon/components';
+import { TEACHER_ROUTES } from '../../../../../core/config/paths';
+import { getCourseWeeks, getWeekItems } from '../../../../../core/services/api';
+import type { ContentItem } from '../../../../../core/types/api.types';
+
+export const prerender = false;
+
+const { courseId, resourceId } = Astro.params;
+const token = Astro.cookies.get('ka_session')?.value ?? '';
+
+if (!courseId || !resourceId) {
+  return Astro.redirect('/profesor');
+}
+
+// ── Tipos auxiliares ────────────────────────────────────────────────
+type ResourceType = 'pdf' | 'documento' | 'imagen' | 'video' | 'audio' | 'enlace' | 'archivo' | string;
+
+function detectViewerType(url: string | null, declaredType: string): ResourceType {
+  if (!url) return declaredType;
+  const u = url.toLowerCase();
+  if (u.includes('youtube.com') || u.includes('youtu.be') || u.includes('vimeo.com')) return 'video-embed';
+  if (u.match(/\.(jpg|jpeg|png|gif|webp|svg|avif)(\?|$)/)) return 'imagen';
+  if (u.match(/\.(mp4|webm|ogv|mov)(\?|$)/)) return 'video';
+  if (u.match(/\.(mp3|wav|ogg|aac|flac|m4a)(\?|$)/)) return 'audio';
+  if (u.match(/\.(pdf)(\?|$)/)) return 'pdf';
+  if (u.match(/\.(docx?|xlsx?|pptx?|odt|ods|odp)(\?|$)/)) return 'documento';
+  
+  if (u.includes('res.cloudinary.com') && ['tarea', 'evaluacion', 'quiz'].includes(declaredType)) {
+    return 'pdf';
+  }
+
+  return declaredType;
+}
+
+function getYoutubeEmbedUrl(url: string): string {
+  const ytMatch = url.match(/(?:youtube\.com\/watch\?v=|youtu\.be\/)([^&\s]+)/);
+  const vmMatch = url.match(/vimeo\.com\/(\d+)/);
+  if (ytMatch) return `https://www.youtube.com/embed/${ytMatch[1]}?autoplay=0&rel=0`;
+  if (vmMatch) return `https://player.vimeo.com/video/${vmMatch[1]}`;
+  return url;
+}
+
+function getDocumentEmbedUrl(url: string, declaredType: string): string {
+  const isOfficeDoc = url.match(/\.(docx?|xlsx?|pptx?|odt|ods|odp)(\?|$)/i) || declaredType === 'documento';
+  if (isOfficeDoc) {
+    return `https://view.officeapps.live.com/op/embed.aspx?src=${encodeURIComponent(url)}`;
+  }
+  // For PDFs, returning the raw URL allows the browser's native PDF viewer to render it.
+  return url;
+}
+
+// ── Buscar el recurso ────────────────────────────────────────────────
+interface ResourceDetail {
+  id: string;
+  title: string;
+  declaredType: string;
+  viewerType: ResourceType;
+  url: string | null;
+  meta: string | null;
+  isPublished: boolean;
+  isVisible: boolean;
+  dueDate: string | null;
+  maxScore: number | null;
+}
+
+let resource: ResourceDetail | null = null;
+
+try {
+  const weeks = await getCourseWeeks(token, courseId);
+  for (const week of weeks) {
+    const items = await getWeekItems(token, courseId, week.id);
+    const found = items.find((i: ContentItem) => i.id === resourceId);
+    if (found) {
+      resource = {
+        id: found.id,
+        title: found.title,
+        declaredType: found.type,
+        viewerType: detectViewerType(found.url, found.type),
+        url: found.url ?? null,
+        meta: found.meta ?? null,
+        isPublished: found.isPublished,
+        isVisible: found.isVisible,
+        dueDate: found.dueDate ?? null,
+        maxScore: found.maxScore ?? null,
+      };
+      break;
+    }
+  }
+} catch (e) {
+  // Manejar errores de red silenciosamente
+}
+
+if (!resource) {
+  return Astro.redirect(TEACHER_ROUTES.courseDetail(courseId));
+}
+
+const backUrl = TEACHER_ROUTES.courseDetail(courseId);
+
+// ── Helpers para el viewer ───────────────────────────────────────────
+function getSafeCloudinaryUrl(url: string): string {
+  if (url.includes('res.cloudinary.com') && url.endsWith('.pdf')) {
+    return url.replace('/upload/', '/upload/fl_attachment/');
+  }
+  return url;
+}
+const safePdfUrl = resource.viewerType === 'pdf' && resource.url ? getSafeCloudinaryUrl(resource.url) : resource.url;
+
+const embedUrl = resource.url
+  ? resource.viewerType === 'video-embed'
+    ? getYoutubeEmbedUrl(resource.url)
+    : (resource.viewerType === 'documento' || resource.viewerType === 'pdf')
+      ? getDocumentEmbedUrl(safePdfUrl!, resource.declaredType)
+      : resource.url
+  : null;
+
+const typeLabels: Record<string, string> = {
+  pdf: 'PDF',
+  documento: 'Documento',
+  imagen: 'Imagen',
+  video: 'Video',
+  'video-embed': 'Video',
+  audio: 'Audio',
+  enlace: 'Enlace',
+  archivo: 'Archivo',
+  tarea: 'Tarea',
+  quiz: 'Quiz',
+  evaluacion: 'Evaluación',
+};
+
+const typeIcons: Record<string, string> = {
+  pdf: 'lucide:file-text',
+  documento: 'lucide:file-text',
+  imagen: 'lucide:image',
+  video: 'lucide:video',
+  'video-embed': 'lucide:video',
+  audio: 'lucide:headphones',
+  enlace: 'lucide:external-link',
+  archivo: 'lucide:paperclip',
+  tarea: 'lucide:clipboard-list',
+  quiz: 'lucide:help-circle',
+  evaluacion: 'lucide:star',
+};
+
+const typeIcon = typeIcons[resource.viewerType] ?? 'lucide:file';
+const typeLabel = typeLabels[resource.viewerType] ?? resource.declaredType;
+const isActivity = ['tarea', 'evaluacion', 'quiz'].includes(resource.declaredType);
+---
+
+<link href="https://cdn.quilljs.com/1.3.6/quill.snow.css" rel="stylesheet">
+<ResourceViewerLayout
+  pageTitle={resource.title}
+  resourceTitle={resource.title}
+  backUrl={backUrl}
+>
+  
+  {isActivity ? (
+    
+  <div class="w-full h-full bg-white flex flex-col overflow-auto min-h-0" id="activity-flow-container">
+    
+    <!-- ESTADO 1: Detalles Iniciales -->
+    <div id="view-details" class="flex-1 flex flex-col w-full max-w-5xl mx-auto p-6 lg:p-10 transition-opacity duration-300">
+      
+      <!-- Encabezado de la actividad -->
+      <div class="mb-10 border-b border-edge-soft pb-6">
+        <h1 class="text-3xl font-extrabold text-brand-dark mb-2">{resource.title}</h1>
+        <div class="flex items-center gap-2 text-sm text-subtle font-medium">
+          <Icon name={typeIcon} class="w-4 h-4" />
+          <span class="uppercase tracking-wide">{typeLabel}</span>
+          {resource.isPublished ? (
+            <span class="ml-2 text-[10px] font-bold bg-success-soft text-success-dark px-2 py-0.5 rounded-full">Publicado</span>
+          ) : (
+            <span class="ml-2 text-[10px] font-bold bg-neutral-subtle text-subtle px-2 py-0.5 rounded-full">Borrador</span>
+          )}
+        </div>
+      </div>
+
+      <div class="grid grid-cols-1 md:grid-cols-3 gap-8">
+        <!-- Izquierda: Detalles básicos -->
+        <div class="md:col-span-2 flex flex-col gap-6">
+          <h2 class="text-lg font-bold text-heading">Detalles</h2>
+          <div class="bg-card border border-edge rounded-xl p-5 flex flex-col gap-4 shadow-sm">
+            <div class="flex items-start gap-3">
+              <Icon name="lucide:calendar" class="w-5 h-5 text-brand mt-0.5" />
+              <div>
+                <p class="text-sm font-bold text-heading">Fecha de entrega de la evaluación</p>
+                <p class="text-sm text-subtle">{resource.dueDate ? new Date(resource.dueDate).toLocaleString('es-ES') : 'Sin fecha límite'}</p>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Derecha: Puntuación e Intentos -->
+        <div class="flex flex-col gap-6">
+          <h2 class="text-lg font-bold text-heading">Calificación / Intentos</h2>
+          <div class="bg-card border border-edge rounded-xl p-5 flex flex-col gap-5 shadow-sm">
+            <div class="flex items-start gap-3">
+              <Icon name="lucide:award" class="w-5 h-5 text-brand mt-0.5" />
+              <div>
+                <p class="text-sm font-bold text-heading">Puntuación máxima</p>
+                <p class="text-sm text-subtle">{resource.maxScore ? resource.maxScore + ' puntos' : '100 puntos'}</p>
+              </div>
+            </div>
+            <div class="flex items-start gap-3">
+              <Icon name="lucide:rotate-ccw" class="w-5 h-5 text-brand mt-0.5" />
+              <div>
+                <p class="text-sm font-bold text-heading">Intentos</p>
+                <p class="text-sm text-subtle">1 intento restante</p>
+              </div>
+            </div>
+            
+            <button id="btn-ver-instrucciones" class="mt-4 w-full py-3 px-4 bg-brand-dark text-white rounded-xl font-bold hover:bg-brand transition-colors flex justify-center items-center gap-2">
+              Ver instrucciones
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- ESTADO 2: Instrucciones y Entrega -->
+    <div id="view-instructions" class="hidden flex-1 w-full max-w-[1400px] mx-auto p-6 lg:p-10 opacity-0 transition-opacity duration-300">
+      
+      <!-- Encabezado simplificado -->
+      <div class="mb-8 flex items-center justify-between border-b border-edge-soft pb-4">
+        <h1 class="text-2xl font-extrabold text-brand-dark">{resource.title}</h1>
+        <button id="btn-volver-detalles" class="text-sm font-bold text-brand hover:underline flex items-center gap-1">
+          <Icon name="lucide:arrow-left" class="w-4 h-4" />
+          Volver a detalles
+        </button>
+      </div>
+
+      <div class="flex flex-col lg:flex-row gap-10">
+        
+        <!-- Columna Principal -->
+        <div class="flex-1 flex flex-col gap-8">
+          
+          <!-- Sección de Instrucciones y Documento Desplegable -->
+          <details class="group bg-card border border-edge rounded-2xl shadow-sm overflow-hidden" open>
+            <summary class="flex items-center justify-between p-5 cursor-pointer hover:bg-neutral-subtle transition-colors list-none">
+              <h2 class="text-base font-bold text-heading flex items-center gap-2">
+                <Icon name="lucide:file-text" class="w-5 h-5 text-brand" />
+                Instrucciones de la actividad
+              </h2>
+              <Icon name="lucide:chevron-down" class="w-5 h-5 text-subtle transition-transform group-open:-rotate-180" />
+            </summary>
+            
+            <div class="p-6 pt-2 border-t border-edge-soft">
+              {resource.meta ? (
+                <div class="text-sm text-heading leading-relaxed mb-6 whitespace-pre-wrap">{resource.meta}</div>
+              ) : (
+                <p class="text-sm text-subtle italic mb-6">No se agregaron instrucciones adicionales.</p>
+              )}
+              
+              <!-- Cabecera del Archivo Adjunto -->
+              {resource.url && (
+                <div class="mt-6 flex flex-col gap-4">
+                  <div class="flex items-center justify-between p-4 bg-neutral-bg/50 rounded-xl border border-edge-soft">
+                    <div class="flex items-center gap-3">
+                      <div class="w-10 h-10 rounded-lg bg-brand-soft flex items-center justify-center shrink-0">
+                        <Icon name="lucide:file-text" class="w-5 h-5 text-brand-dark" />
+                      </div>
+                      <div>
+                        <p class="text-sm font-bold text-heading">Archivo Adjunto</p>
+                        <p class="text-xs text-subtle uppercase">{resource.viewerType}</p>
+                      </div>
+                    </div>
+                    <a href={resource.url.includes('res.cloudinary.com') ? resource.url.replace('/upload/', '/upload/fl_attachment/') : resource.url} target="_blank" download class="flex items-center gap-2 px-4 py-2 bg-brand text-white text-sm font-bold rounded-lg hover:bg-brand-dark transition-colors shadow-sm">
+                      <Icon name="lucide:download" class="w-4 h-4" />
+                      Descargar
+                    </a>
+                  </div>
+
+                  <!-- Visor de Documento Incrustado -->
+                  <div class="rounded-xl border border-edge overflow-hidden bg-neutral-200" style="height: 500px;">
+                    {resource.viewerType === 'pdf' || resource.viewerType === 'documento' ? (
+                      <iframe src={`https://docs.google.com/viewer?url=${encodeURIComponent(resource.url)}&embedded=true`} class="w-full h-full bg-white border-none" title={resource.title}></iframe>
+                    ) : resource.viewerType === 'imagen' ? (
+                      <div class="w-full h-full flex items-center justify-center bg-white p-4">
+                        <img src={resource.url} alt="Documento" class="max-w-full max-h-full object-contain" />
+                      </div>
+                    ) : (
+                      <div class="w-full h-full flex flex-col items-center justify-center p-8 bg-white">
+                         <Icon name="lucide:eye-off" class="w-10 h-10 text-muted mb-2" />
+                         <p class="text-sm text-heading font-semibold mb-3">No hay previsualización disponible</p>
+                         <p class="text-xs text-subtle text-center">Por favor, descarga el archivo para verlo.</p>
+                      </div>
+                    )}
+                  </div>
+                </div>
+              )}
+            </div>
+          </details>
+
+          <!-- Sección de Entrega (Previsualización) -->
+          <div class="bg-card border border-brand-soft rounded-2xl shadow-sm overflow-hidden mt-2">
+            <div class="bg-brand-soft px-5 py-3 border-b border-brand-soft">
+              <h2 class="text-base font-bold text-brand-dark flex items-center gap-2">
+                <Icon name="lucide:upload-cloud" class="w-5 h-5" />
+                Entrega
+                <span class="ml-2 text-[10px] uppercase tracking-wide bg-brand-dark text-white px-2 py-0.5 rounded-full">Vista Previa</span>
+              </h2>
+            </div>
+            <div class="p-6 flex flex-col gap-6">
+              
+              <!-- Editor Quill (Vista Previa para Profesores) -->
+              <div class="border border-edge rounded-xl overflow-hidden bg-white">
+                <div id="toolbar-container" class="border-b border-edge bg-neutral-subtle">
+                  <span class="ql-formats">
+                    <button class="ql-bold"></button>
+                    <button class="ql-italic"></button>
+                    <button class="ql-underline"></button>
+                  </span>
+                  <span class="ql-formats">
+                    <button class="ql-list" value="ordered"></button>
+                    <button class="ql-list" value="bullet"></button>
+                  </span>
+                  <span class="ql-formats">
+                    <button class="ql-link"></button>
+                  </span>
+                </div>
+                <div id="editor-container" class="h-32 text-sm"></div>
+                <div class="px-3 py-1 bg-neutral-bg text-[10px] text-subtle text-right border-t border-edge">
+                  <span id="char-count">0</span> caracteres
+                </div>
+              </div>
+
+              <!-- Input de archivos real (Vista Previa) -->
+              <label for="submission-file" class="border-2 border-dashed border-edge hover:border-brand hover:bg-brand-soft/20 rounded-xl p-8 flex flex-col items-center justify-center text-center gap-3 transition-colors cursor-pointer bg-neutral-bg/30 group">
+                <Icon name="lucide:file-up" class="w-10 h-10 text-subtle group-hover:text-brand transition-colors" />
+                <div>
+                  <p class="text-sm font-bold text-heading" id="submission-filename-label">Arrastrar archivo aquí o hacer clic</p>
+                  <p class="text-xs text-subtle mt-0.5">Tamaño máximo: 15 MB (PDF, DOCX, JPG...)</p>
+                </div>
+                <input type="file" id="submission-file" class="sr-only" />
+              </label>
+
+              <!-- Acciones de entrega falso -->
+              <div class="flex justify-end mt-2">
+                <button type="button" id="btn-enviar-entrega" class="px-6 py-2.5 bg-brand text-white font-bold rounded-xl text-sm shadow cursor-pointer pointer-events-auto">Enviar entrega</button>
+              </div>
+            </div>
+          </div>
+
+        </div>
+
+        <!-- Columna Lateral (Derecha) -->
+        <div class="w-full lg:w-80 shrink-0 flex flex-col gap-6">
+          <div class="bg-white border border-edge rounded-xl p-5 shadow-sm">
+            <h3 class="text-sm font-bold text-heading mb-4 border-b border-edge-soft pb-2">Detalles e información</h3>
+            
+            <div class="flex flex-col gap-5">
+              <div class="flex items-start gap-3">
+                <Icon name="lucide:calendar" class="w-4 h-4 text-subtle mt-0.5" />
+                <div>
+                  <p class="text-xs font-bold text-heading">Fecha de entrega</p>
+                  <p class="text-xs text-subtle">{resource.dueDate ? new Date(resource.dueDate).toLocaleString('es-ES') : 'Sin fecha límite'}</p>
+                </div>
+              </div>
+              
+              <div class="flex items-start gap-3">
+                <Icon name="lucide:check-square" class="w-4 h-4 text-subtle mt-0.5" />
+                <div>
+                  <p class="text-xs font-bold text-heading">Intentos</p>
+                  <p class="text-xs text-subtle">1 intento restante</p>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <div class="bg-white border border-edge rounded-xl shadow-sm overflow-hidden">
+            <h3 class="text-sm font-bold text-heading p-4 border-b border-edge-soft bg-neutral-bg/50">Calificaciones</h3>
+            <div class="p-4 flex items-center justify-between">
+              <div class="flex items-center gap-3">
+                <Icon name="lucide:file-check-2" class="w-5 h-5 text-brand" />
+                <span class="text-sm font-bold text-heading">Puntuación máxima</span>
+              </div>
+              <span class="text-sm text-subtle font-medium">{resource.maxScore ? resource.maxScore : '100'} puntos</span>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  ) : (
+    <div class="w-full h-full flex flex-col overflow-auto">
+
+    <!-- ── Info Banner ────────────────────────────────────────── -->
+    <div class="flex items-center gap-3 px-5 py-3 border-b border-edge-soft bg-neutral-bg/50 shrink-0 flex-wrap gap-y-2">
+      <div class="flex items-center gap-2">
+        <Icon name={typeIcon} class="w-4 h-4 text-brand-dark" />
+        <span class="text-xs font-bold text-brand-dark uppercase tracking-wide">{typeLabel}</span>
+      </div>
+      {resource.meta && (
+        <span class="text-xs text-subtle">·&nbsp;{resource.meta}</span>
+      )}
+      <div class="ml-auto flex items-center gap-2">
+        {resource.isPublished ? (
+          <span class="text-[10px] font-bold bg-success-soft text-success-dark px-2 py-0.5 rounded-full">Publicado</span>
+        ) : (
+          <span class="text-[10px] font-bold bg-neutral-subtle text-subtle px-2 py-0.5 rounded-full">Borrador</span>
+        )}
+        {resource.isVisible ? (
+          <span class="text-[10px] font-bold bg-brand-soft text-brand-dark px-2 py-0.5 rounded-full">Visible</span>
+        ) : (
+          <span class="text-[10px] font-bold bg-neutral-subtle text-subtle px-2 py-0.5 rounded-full">Oculto</span>
+        )}
+        {resource.url && (
+          <a
+            href={resource.url}
+            target="_blank"
+            download
+            class="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-brand text-white text-xs font-bold hover:bg-brand-dark transition-colors"
+          >
+            <Icon name="lucide:download" class="w-3.5 h-3.5" />
+            Descargar
+          </a>
+        )}
+      </div>
+    </div>
+
+    <!-- ── Área del Viewer ─────────────────────────────────────── -->
+    <div class="flex-1 flex flex-col min-h-0">
+
+      {/* PDF Nativo */}
+      {resource.viewerType === 'pdf' && resource.url && (
+        <div class="flex-1 flex flex-col min-h-0">
+          <object
+            data={resource.url}
+            type="application/pdf"
+            class="flex-1 w-full border-none bg-neutral-200"
+          >
+            <div class="flex-1 flex flex-col items-center justify-center gap-4 py-16 px-8 text-center">
+              <Icon name="lucide:file-text" class="w-14 h-14 text-muted" />
+              <p class="text-sm font-semibold text-heading">No se puede mostrar el PDF en línea.</p>
+              <p class="text-xs text-subtle max-w-md">Si estás usando Cloudinary, asegúrate de desactivar la opción <strong>"Strict delivery" para PDFs</strong> en los ajustes de seguridad de tu cuenta, o descarga el archivo directamente.</p>
+              <a
+                href={resource.url}
+                target="_blank"
+                download
+                class="flex items-center gap-2 px-4 py-2 mt-2 rounded-xl bg-brand text-white text-sm font-bold hover:bg-brand-dark transition-colors"
+              >
+                <Icon name="lucide:download" class="w-4 h-4" />
+                Descargar PDF
+              </a>
+            </div>
+          </object>
+        </div>
+      )}
+
+      {/* Documento de Office → Google Docs Viewer */}
+      {resource.viewerType === 'documento' && embedUrl && (
+        <div class="flex-1 flex flex-col min-h-0">
+          <iframe
+            id="doc-viewer"
+            src={embedUrl}
+            class="flex-1 w-full border-none bg-white"
+            title={resource.title}
+          />
+          <!-- Fallback si Google Docs falla -->
+          <div id="viewer-fallback" class="hidden flex-col items-center justify-center gap-4 py-16 px-8 text-center">
+            <Icon name="lucide:file-x" class="w-14 h-14 text-muted" />
+            <p class="text-sm font-semibold text-heading">El previsualizador no pudo cargar este documento.</p>
+            <p class="text-xs text-subtle">Puede deberse a restricciones de Cloudinary o del formato del archivo.</p>
+            <a
+              href={resource.url ?? '#'}
+              target="_blank"
+              class="flex items-center gap-2 px-4 py-2 rounded-xl bg-brand text-white text-sm font-bold hover:bg-brand-dark transition-colors"
+            >
+              <Icon name="lucide:download" class="w-4 h-4" />
+              Abrir / Descargar archivo
+            </a>
+          </div>
+        </div>
+      )}
+
+      {/* Imagen */}
+      {resource.viewerType === 'imagen' && resource.url && (
+        <div class="flex-1 flex items-center justify-center p-6 bg-checker">
+          <img
+            src={resource.url}
+            alt={resource.title}
+            class="max-w-full max-h-full object-contain rounded-xl shadow-lg"
+            loading="lazy"
+          />
+        </div>
+      )}
+
+      {/* Video nativo (Cloudinary / S3) */}
+      {resource.viewerType === 'video' && resource.url && (
+        <div class="flex-1 flex items-center justify-center bg-black p-4">
+          <video
+            controls
+            autoplay={false}
+            class="max-w-full max-h-full rounded-xl shadow-lg"
+            style="max-height: calc(100vh - 200px);"
+          >
+            <source src={resource.url} />
+            Tu navegador no soporta la reproducción de video.
+          </video>
+        </div>
+      )}
+
+      {/* Video embed (YouTube / Vimeo) */}
+      {resource.viewerType === 'video-embed' && embedUrl && (
+        <div class="flex-1 flex items-center justify-center bg-black p-4">
+          <iframe
+            src={embedUrl}
+            class="w-full aspect-video max-w-5xl rounded-xl shadow-lg"
+            allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
+            allowfullscreen
+            title={resource.title}
+          />
+        </div>
+      )}
+
+      {/* Audio */}
+      {resource.viewerType === 'audio' && resource.url && (
+        <div class="flex-1 flex flex-col items-center justify-center gap-6 p-8">
+          <div class="w-28 h-28 rounded-full bg-brand-soft flex items-center justify-center shadow-lg">
+            <Icon name="lucide:headphones" class="w-14 h-14 text-brand-dark" />
+          </div>
+          <p class="text-lg font-bold text-heading text-center">{resource.title}</p>
+          <audio controls class="w-full max-w-lg rounded-xl shadow">
+            <source src={resource.url} />
+            Tu navegador no soporta la reproducción de audio.
+          </audio>
+        </div>
+      )}
+
+      {/* Enlace externo */}
+      {(resource.viewerType === 'enlace' || resource.declaredType === 'enlace') && resource.url && (
+        <div class="flex-1 flex flex-col items-center justify-center gap-5 p-8 text-center">
+          <div class="w-20 h-20 rounded-2xl bg-teal-50 flex items-center justify-center shadow">
+            <Icon name="lucide:external-link" class="w-10 h-10 text-teal-600" />
+          </div>
+          <div>
+            <p class="text-base font-bold text-heading mb-1">{resource.title}</p>
+            <p class="text-xs text-subtle break-all max-w-md">{resource.url}</p>
+          </div>
+          <a
+            href={resource.url}
+            target="_blank"
+            rel="noopener noreferrer"
+            class="flex items-center gap-2 px-6 py-3 rounded-xl bg-brand text-white font-bold hover:bg-brand-dark transition-colors shadow"
+          >
+            <Icon name="lucide:external-link" class="w-4 h-4" />
+            Abrir enlace
+          </a>
+          <!-- Intentar previsualizar en iframe -->
+          <details class="w-full max-w-4xl mt-4">
+            <summary class="cursor-pointer text-xs text-subtle font-semibold hover:text-heading mb-3">
+              Previsualizar en visor integrado (puede no funcionar por CORS)
+            </summary>
+            <iframe
+              src={getDocumentEmbedUrl(resource.url, resource.declaredType)}
+              class="w-full h-full rounded-2xl border border-edge bg-card shadow-sm"
+              allowfullscreen
+              title={resource.title}
+            />
+          </details>
+        </div>
+      )}
+
+      {/* Tipo no reconocido o sin URL */}
+      {!resource.url && (
+        <div class="flex-1 flex flex-col items-center justify-center gap-4 p-8 text-center">
+          <Icon name="lucide:file-question" class="w-16 h-16 text-muted" />
+          <p class="text-base font-bold text-heading">Sin archivo adjunto</p>
+          <p class="text-sm text-subtle">Este recurso no tiene un archivo o URL asociado todavía.</p>
+          <a
+            href={backUrl}
+            class="flex items-center gap-2 px-4 py-2 rounded-xl border border-edge text-sm font-semibold text-heading hover:bg-neutral-subtle transition-colors"
+          >
+            <Icon name="lucide:arrow-left" class="w-4 h-4" />
+            Volver al curso
+          </a>
+        </div>
+      )}
+    </div>
+
+  </div>
+
+  )}
+
+</ResourceViewerLayout>
+<script>
+  // Script para manejar la transición entre Estado 1 y Estado 2 de Actividades
+  document.addEventListener('astro:page-load', () => {
+    const btnVerInstrucciones = document.getElementById('btn-ver-instrucciones');
+    const btnVolverDetalles = document.getElementById('btn-volver-detalles');
+    
+    const viewDetails = document.getElementById('view-details');
+    const viewInstructions = document.getElementById('view-instructions');
+    
+    if (btnVerInstrucciones && viewDetails && viewInstructions) {
+      btnVerInstrucciones.addEventListener('click', () => {
+        // Fade out details
+        viewDetails.classList.replace('opacity-100', 'opacity-0');
+        setTimeout(() => {
+          viewDetails.classList.add('hidden');
+          viewInstructions.classList.remove('hidden');
+          
+          // Trigger reflow
+          void viewInstructions.offsetWidth;
+          
+          viewInstructions.classList.replace('opacity-0', 'opacity-100');
+        }, 300);
+      });
+    }
+
+    if (btnVolverDetalles && viewDetails && viewInstructions) {
+      btnVolverDetalles.addEventListener('click', () => {
+        viewInstructions.classList.replace('opacity-100', 'opacity-0');
+        setTimeout(() => {
+          viewInstructions.classList.add('hidden');
+          viewDetails.classList.remove('hidden');
+          
+          // Trigger reflow
+          void viewDetails.offsetWidth;
+          
+          viewDetails.classList.replace('opacity-0', 'opacity-100');
+        }, 300);
+      });
+    }
+  });
+
+  // Lógica actual de Google Docs Fallback
+  const iframe = document.getElementById('doc-viewer') as HTMLIFrameElement | null;
+  const fallback = document.getElementById('viewer-fallback') as HTMLDivElement | null;
+  
+  if (iframe && fallback) {
+    const timer = setTimeout(() => {
+      iframe.classList.add('hidden');
+      fallback.classList.remove('hidden');
+      fallback.classList.add('flex');
+    }, 15000);
+
+    iframe.addEventListener('load', () => clearTimeout(timer));
+    iframe.addEventListener('error', () => {
+      clearTimeout(timer);
+      iframe.classList.add('hidden');
+      fallback.classList.remove('hidden');
+      fallback.classList.add('flex');
+    });
+  }
+
+  document.addEventListener('astro:page-load', () => {
+    // Inicializar Quill
+    if (document.getElementById('editor-container') && !window.quill) {
+      // Lazy load Quill JS
+      const script = document.createElement('script');
+      script.src = "https://cdn.quilljs.com/1.3.6/quill.js";
+      script.onload = () => {
+        window.quill = new window.Quill('#editor-container', {
+          theme: 'snow',
+          placeholder: 'Escribe tu respuesta aquí...',
+          modules: {
+            toolbar: '#toolbar-container'
+          }
+        });
+        
+        window.quill.on('text-change', () => {
+          const text = window.quill.getText().trim();
+          const charCountEl = document.getElementById('char-count');
+          if (charCountEl) {
+            charCountEl.textContent = text.length;
+          }
+        });
+      };
+      document.head.appendChild(script);
+    } else if (document.getElementById('editor-container') && window.quill) {
+      // Ya está cargado el script, solo inicializar si el editor está vacío
+      if (!document.querySelector('#editor-container .ql-editor')) {
+         window.quill = new window.Quill('#editor-container', {
+          theme: 'snow',
+          placeholder: 'Escribe tu respuesta aquí...',
+          modules: {
+            toolbar: '#toolbar-container'
+          }
+        });
+      }
+    }
+
+    // Input de archivo y prevención de Drag & Drop
+    const subFile = document.getElementById('submission-file');
+    const lbl = document.getElementById('submission-filename-label');
+    const dropZone = subFile?.closest('label');
+
+    if (lbl) {
+      lbl.classList.add('truncate', 'max-w-full', 'px-4'); // Prevent long filenames from breaking layout
+    }
+
+    if (subFile) {
+      subFile.addEventListener('change', (e) => {
+        const f = (e.target as HTMLInputElement).files?.[0];
+        if (lbl) {
+          lbl.textContent = f ? f.name : 'Arrastrar archivo aquí o hacer clic';
+          lbl.classList.toggle('text-brand', !!f);
+        }
+      });
+    }
+
+    if (dropZone) {
+      dropZone.addEventListener('dragover', (e) => {
+        e.preventDefault();
+        dropZone.classList.add('bg-brand-soft/50', 'border-brand');
+      });
+      dropZone.addEventListener('dragleave', (e) => {
+        e.preventDefault();
+        dropZone.classList.remove('bg-brand-soft/50', 'border-brand');
+      });
+      dropZone.addEventListener('drop', (e) => {
+        e.preventDefault();
+        dropZone.classList.remove('bg-brand-soft/50', 'border-brand');
+        
+        const dragEvent = e as DragEvent;
+        if (dragEvent.dataTransfer?.files.length && subFile) {
+          (subFile as HTMLInputElement).files = dragEvent.dataTransfer.files;
+          const f = dragEvent.dataTransfer.files[0];
+          if (lbl) {
+            lbl.textContent = f.name;
+            lbl.classList.add('text-brand');
+          }
+        }
+      });
+    }
+
+    // El botón de enviar entrega
+    const submitBtn = document.getElementById('btn-enviar-entrega');
+    if (submitBtn) {
+      submitBtn.addEventListener('click', () => {
+        alert("Modo Vista Previa: En la vista del profesor no se puede enviar una entrega real.");
+      });
+    }
+  });
+</script>

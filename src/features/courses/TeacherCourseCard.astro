@@ -1,0 +1,83 @@
+---
+import Badge from '../../components/ui/Badge.astro';
+import ProgressBar from '../../components/ui/ProgressBar.astro';
+import { Icon } from 'astro-icon/components';
+import { APP_ROUTES } from '../../core/config/paths';
+
+interface CourseStatus { label: string; variant: 'success' | 'muted' | 'warning'; dotColor: string; }
+interface Props {
+  courseTitle: string;
+  groupSchedule: string;
+  status: 'active' | 'finished' | 'upcoming';
+  activeStudents: number;
+  totalStudents: number;
+  progressPercent: number;
+  courseHref: string;
+}
+
+const { courseTitle, groupSchedule, status, activeStudents, totalStudents, progressPercent, courseHref } = Astro.props;
+
+const statusMap: Record<Props['status'], CourseStatus> = {
+  active:   { label: 'En curso',    variant: 'success', dotColor: 'bg-success' },
+  finished: { label: 'Finalizado',  variant: 'muted',   dotColor: 'bg-muted' },
+  upcoming: { label: 'Próximamente', variant: 'warning', dotColor: 'bg-amber-400' },
+};
+
+const currentStatus = statusMap[status];
+
+/**
+ * Extraemos el courseId del courseHref para generar sub-rutas
+ * usando APP_ROUTES en lugar de template literals hardcodeados.
+ */
+const courseIdSlug = courseHref.split('/').pop() ?? '';
+---
+
+<article class="bg-card rounded-xl border border-edge p-5 flex flex-col gap-4 hover:shadow-md transition-shadow duration-200">
+  <div class="flex items-center justify-between">
+    <div class="flex items-center gap-1.5">
+      <span class={`w-2 h-2 rounded-full flex-shrink-0 ${currentStatus.dotColor}`} aria-hidden="true"></span>
+      <Badge label={currentStatus.label} variant={currentStatus.variant} />
+    </div>
+    <button type="button" aria-label={`Más opciones para ${courseTitle}`}
+      class="p-1 text-muted hover:text-heading transition-colors rounded-md hover:bg-neutral-subtle">
+      <Icon name="lucide:more-vertical" class="w-4 h-4" />
+    </button>
+  </div>
+
+  <div>
+    <h3 class="text-base font-bold text-heading">{courseTitle}</h3>
+    <p class="text-sm text-subtle mt-0.5">{groupSchedule}</p>
+  </div>
+
+  <div class="grid grid-cols-2 gap-4">
+    <div>
+      <p class="text-xs text-subtle mb-1">Alumnos Activos</p>
+      <div class="flex items-center gap-1.5">
+        <Icon name="lucide:users" class="w-4 h-4 text-muted" aria-hidden="true" />
+        <span class="text-sm font-bold text-heading">{activeStudents}</span>
+        <span class="text-sm text-muted">/{totalStudents}</span>
+      </div>
+    </div>
+    <div>
+      <div class="flex items-center justify-between mb-1">
+        <p class="text-xs text-subtle">Progreso General</p>
+        <span class="text-xs font-semibold text-heading">{progressPercent}%</span>
+      </div>
+      <ProgressBar value={progressPercent} colorClass={status === 'finished' ? 'bg-muted' : 'bg-brand'} />
+    </div>
+  </div>
+
+  <nav class="grid grid-cols-3 gap-2 pt-2 border-t border-edge-soft" aria-label={`Accesos rápidos de ${courseTitle}`}>
+    {[
+      { icon: 'lucide:users',          label: 'Alumnos',  href: APP_ROUTES.courseStudents(courseIdSlug) },
+      { icon: 'lucide:cloud',          label: 'Material', href: APP_ROUTES.courseMaterial(courseIdSlug) },
+      { icon: 'lucide:clipboard-list', label: 'Notas',    href: APP_ROUTES.courseGrades(courseIdSlug) },
+    ].map((action) => (
+      <a href={action.href}
+        class="flex flex-col items-center gap-1 p-2 rounded-lg text-subtle hover:bg-neutral-bg hover:text-heading transition-colors text-xs font-medium">
+        <Icon name={action.icon} class="w-4 h-4" aria-hidden="true" />
+        {action.label}
+      </a>
+    ))}
+  </nav>
+</article>

@@ -1,0 +1,161 @@
+/* ============================================================
+   Kelly Academy — Global Styles & Design System
+   ============================================================
+   SOLUCIÓN DEFINITIVA: Los tokens de color se aplican
+   mediante @layer utilities con clases explícitas. Esto
+   garantiza que Tailwind genere las reglas CSS sin depender
+   de resolución de variables en tiempo de ejecución.
+   ============================================================ */
+@import "tailwindcss";
+
+/* ─── CSS Custom Properties (:root) ─────────────────────────── */
+@layer base {
+  :root {
+    --color-brand-primary:   #FF4E20;
+    --color-brand-dark:      #d93e14;
+    --color-brand-soft:      #fde8e2;
+    --color-brand-muted:     #fad3c8;
+    --color-surface-sidebar: #000000;
+    --color-surface-page:    #FAF7F5;
+    --color-surface-card:    #ffffff;
+    --color-text-primary:    #1a1a1a;
+    --color-text-secondary:  #6b7280;
+    --color-text-muted:      #969696;
+    --color-border-default:  #e5e7eb;
+    --color-border-soft:     #f3f4f6;
+  }
+
+  *, *::before, *::after { box-sizing: border-box; }
+
+  html {
+    font-family: 'Inter', system-ui, sans-serif;
+    -webkit-font-smoothing: antialiased;
+    scroll-behavior: smooth;
+  }
+
+  body {
+    background-color: var(--color-surface-page);
+    color: var(--color-text-primary);
+    min-height: 100vh;
+  }
+}
+
+/* ─── Tailwind v4 @theme tokens ─────────────────────────────── */
+@theme {
+  /* ── Brand ─────────────────────────────────────────────────── */
+  --color-brand-primary:   #FF4E20;
+  --color-brand-dark:      #d93e14;
+  --color-brand-soft:      #fde8e2;
+  --color-brand-muted:     #fad3c8;
+
+  /* ── Surfaces ──────────────────────────────────────────────── */
+  --color-sidebar:         #000000;
+  --color-surface:         #FAF7F5;
+  --color-card:            #ffffff;
+  --color-neutral-bg:      #f9fafb;
+  --color-neutral-subtle:  #f3f4f6;
+  --color-neutral-light:   #e5e7eb;
+  --color-neutral-base:    #d1d5db;
+
+  /* ── Text (Semántico) ──────────────────────────────────────── */
+  --color-heading:         #1a1a1a;
+  --color-body:            #374151;
+  --color-subtle:          #6b7280;
+  --color-muted:           #9ca3af;
+  --color-faint:           #d1d5db;
+
+  /* ── Icons ─────────────────────────────────────────────────── */
+  --color-icon-default:    #9ca3af;
+  --color-icon-subtle:     #6b7280;
+
+  /* ── Borders ───────────────────────────────────────────────── */
+  --color-edge:            #e5e7eb;
+  --color-edge-soft:       #f3f4f6;
+
+  /* ── Font ──────────────────────────────────────────────────── */
+  --font-sans: 'Inter', system-ui, sans-serif;
+
+  /* ── Status Colors ─────────────────────────────────────────── */
+  --color-success:         #22c55e;
+  --color-success-dark:    #16a34a;
+  --color-success-soft:    #dcfce7;
+  
+  --color-danger:          #ef4444;
+  --color-danger-dark:     #dc2626;
+  --color-danger-soft:     #fee2e2;
+  
+  --color-warning:         #f59e0b;
+  --color-warning-dark:    #d97706;
+  --color-warning-soft:    #fef3c7;
+}
+
+/* ─── Utilidades de Design System ───────────────────────────────
+   Se exponen como clases Tailwind para uso consistente en
+   todos los componentes. Colores hardcodeados = generación
+   garantizada de CSS.
+   ─────────────────────────────────────────────────────────── */
+@layer utilities {
+  /* Backgrounds */
+  .bg-brand          { background-color: #FF4E20; }
+  .bg-brand-dark     { background-color: #d93e14; }
+  .bg-brand-soft     { background-color: #fde8e2; }
+  .bg-brand-muted    { background-color: #fad3c8; }
+  .bg-sidebar        { background-color: #000000; }
+  .bg-page           { background-color: #FAF7F5; }
+  .bg-card           { background-color: #ffffff; }
+
+  /* Text */
+  .text-brand        { color: #FF4E20; }
+  .text-brand-dark   { color: #d93e14; }
+  .text-primary      { color: #1a1a1a; }
+  .text-secondary-ka { color: #6b7280; }
+  .text-muted-ka     { color: #969696; }
+
+  /* Borders */
+  .border-brand      { border-color: #FF4E20; }
+  .border-default    { border-color: #e5e7eb; }
+  .border-soft       { border-color: #f3f4f6; }
+
+  /* Ring / focus */
+  .ring-brand        { --tw-ring-color: #FF4E20; }
+
+  /* Hover backgrounds */
+  .hover\:bg-brand-dark:hover  { background-color: #d93e14; }
+  .hover\:bg-brand-soft:hover  { background-color: #fde8e2; }
+  .hover\:bg-brand-muted:hover { background-color: #fad3c8; }
+  .hover\:text-brand:hover     { color: #FF4E20; }
+
+  /* Status Backgrounds */
+  .bg-success          { background-color: #22c55e; }
+  .bg-success-dark     { background-color: #16a34a; }
+  .bg-success-soft     { background-color: #dcfce7; }
+  .bg-danger           { background-color: #ef4444; }
+  .bg-danger-dark      { background-color: #dc2626; }
+  .bg-danger-soft      { background-color: #fee2e2; }
+  .bg-warning          { background-color: #f59e0b; }
+  .bg-warning-dark     { background-color: #d97706; }
+  .bg-warning-soft     { background-color: #fef3c7; }
+
+  /* Status Text */
+  .text-success        { color: #22c55e; }
+  .text-success-dark   { color: #16a34a; }
+  .text-danger         { color: #ef4444; }
+  .text-danger-dark    { color: #dc2626; }
+  .text-warning        { color: #f59e0b; }
+  .text-warning-dark   { color: #d97706; }
+
+  /* Status Borders */
+  .border-danger-soft  { border-color: #fecaca; }
+  .border-success-soft { border-color: #bbf7d0; }
+  
+  /* Status Hover */
+  .hover\:bg-danger-dark:hover { background-color: #dc2626; }
+  .hover\:text-danger-dark:hover { color: #dc2626; }
+  .hover\:bg-danger-soft:hover { background-color: #fee2e2; }
+}
+
+/* ─── Fuentes locales ──────────────────────────────────────── */
+@import "@fontsource/inter/400.css";
+@import "@fontsource/inter/500.css";
+@import "@fontsource/inter/600.css";
+@import "@fontsource/inter/700.css";
