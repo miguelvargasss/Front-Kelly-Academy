@@ -409,9 +409,10 @@ import { APP_ROUTES } from '../../core/config/paths';
       // ── Escribir cookies (leídas por el middleware server-side) ──
       const maxAge  = keepSession ? 60 * 60 * 24 * 7 : 0; // 7 días o sesión
       const expires = keepSession ? `; max-age=${maxAge}` : '';
+      const secure  = window.location.protocol === 'https:' ? '; Secure' : '';
 
-      document.cookie = `ka_session=${accessToken}; path=/${expires}; SameSite=Lax`;
-      document.cookie = `ka_role=${role}; path=/${expires}; SameSite=Lax`;
+      document.cookie = `ka_session=${accessToken}; path=/${expires}; SameSite=Lax${secure}`;
+      document.cookie = `ka_role=${role}; path=/${expires}; SameSite=Lax${secure}`;
 
       // ── También en storage para compatibilidad con guards client-side ─
       const store = keepSession ? localStorage : sessionStorage;
