@@ -25,13 +25,32 @@ let userName = 'Prof. Anderson';
 let totalAlumnos = 0;
 
 try {
+  console.log('[SSR] Iniciando carga de datos del dashboard profesor...');
+  
+  // Función auxiliar para añadir un timeout de 8s a las promesas
+  // para evitar que Vercel mate el proceso a los 10s y nos deje sin logs
+  const withTimeout = <T>(promise: Promise<T>, name: string): Promise<T> => {
+    return Promise.race([
+      promise.then(res => {
+        console.log(`[SSR] ✅ ${name} completado`);
+        return res;
+      }),
+      new Promise<never>((_, reject) => 
+        setTimeout(() => reject(new Error(`Timeout en ${name}`)), 8000)
+      )
+    ]);
+  };
+
   const [coursesData, classesData, gradesData, userData, usersData] = await Promise.all([
-    getCourses(token, 1, 100),
-    getClasses(token, 1, 5),
-    getGrades(token, undefined, 1, 5), // Recent grades
-    authMe(token),
-    getUsers(token, 'estudiante', undefined, 1, 1) // Just 1 limit, we just need the count
+    withTimeout(getCourses(token, 1, 100), 'getCourses'),
+    withTimeout(getClasses(token, 1, 5), 'getClasses'),
+    withTimeout(getGrades(token, undefined, 1, 5), 'getGrades'),
+    withTimeout(authMe(token), 'authMe'),
+    withTimeout(getUsers(token, 'estudiante', undefined, 1, 1), 'getUsers')
   ]);
+  
+  console.log('[SSR] Todos los datos cargados con éxito');
+  
   courses = coursesData?.courses || [];
   upcomingClasses = classesData?.classes || [];
   recentGrades = gradesData?.grades || [];
@@ -42,7 +61,7 @@ try {
     userName = `Prof. ${firstName}`;
   }
 } catch (error: any) {
-  console.error('Error fetching teacher dashboard data:', error);
+  console.error('[SSR] Error fatal fetching teacher dashboard data:', error.message || error);
   if (error.statusCode === 401) {
     Astro.cookies.delete('ka_session', { path: '/' });
     Astro.cookies.delete('ka_role', { path: '/' });
