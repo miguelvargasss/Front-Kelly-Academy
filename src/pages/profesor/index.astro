@@ -29,7 +29,7 @@ try {
   
   // Función auxiliar para añadir un timeout de 8s a las promesas
   // para evitar que Vercel mate el proceso a los 10s y nos deje sin logs
-  const withTimeout = <T>(promise: Promise<T>, name: string): Promise<T> => {
+  async function withTimeout(promise: Promise<any>, name: string): Promise<any> {
     return Promise.race([
       promise.then(res => {
         console.log(`[SSR] ✅ ${name} completado`);
@@ -39,7 +39,7 @@ try {
         setTimeout(() => reject(new Error(`Timeout en ${name}`)), 8000)
       )
     ]);
-  };
+  }
 
   const [coursesData, classesData, gradesData, userData, usersData] = await Promise.all([
     withTimeout(getCourses(token, 1, 100), 'getCourses'),
